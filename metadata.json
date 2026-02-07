@@ -1,0 +1,5 @@
+{
+  "name": "GuitarScaleMaster",
+  "description": "一个美观的吉他指板可视化工具，结合 Google Gemini AI 提供乐理指导。",
+  "requestFramePermissions": []
+}
