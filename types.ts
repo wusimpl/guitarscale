@@ -58,6 +58,25 @@ export interface ChordShape {
   mutedStrings: number[]; // Indices of strings that should not be played
 }
 
+// 和弦音阶匹配练习 - 和弦质量类型
+export type ChordQuality = 'major' | 'minor' | 'dominant7' | 'minor7' | 'maj7' | 'dim' | 'aug' | 'sus4' | 'sus2' | 'm7b5';
+
+// 和弦音阶匹配练习 - 题目
+export interface ChordScaleQuestion {
+  chordName: string;           // 和弦名称，如 "Dm7"
+  chordRoot: NoteName;         // 和弦根音
+  chordQuality: ChordQuality;  // 和弦质量
+  correctAnswer: string;       // 正确答案的音阶key，如 "D-Dorian"
+  options: ChordScaleOption[];  // 4个选项
+}
+
+export interface ChordScaleOption {
+  key: string;                 // 唯一标识，如 "D-Dorian"
+  label: string;               // 显示名称，如 "D Dorian"
+  rootNote: NoteName;          // 音阶根音
+  intervals: number[];         // 音阶音程
+}
+
 export interface ChatMessage {
   role: 'user' | 'model';
   text: string;

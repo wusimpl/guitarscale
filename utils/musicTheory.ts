@@ -1,5 +1,5 @@
 
-import { NoteName, ScaleType, ScaleDefinition, ChordShape, ChordCategory } from '../types';
+import { NoteName, ScaleType, ScaleDefinition, ChordShape, ChordCategory, ChordQuality, ChordScaleQuestion, ChordScaleOption } from '../types';
 
 export const ALL_NOTES: NoteName[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -152,4 +152,151 @@ export const getFullIntervalName = (shortName: string | undefined): string => {
     '7': 'Major 7th (大七度)'
   };
   return map[shortName] || shortName;
+};
+
+// ========== 和弦音阶匹配练习 ==========
+
+// 扩展音阶定义（包含教会调式等，用于和弦音阶匹配练习）
+export interface ExtendedScale {
+  name: string;        // 显示名称
+  nameZh: string;      // 中文名称
+  intervals: number[]; // 半音音程
+}
+
+export const EXTENDED_SCALES: Record<string, ExtendedScale> = {
+  'Ionian':          { name: 'Ionian',          nameZh: '大调',       intervals: [0, 2, 4, 5, 7, 9, 11] },
+  'Dorian':          { name: 'Dorian',          nameZh: '多利亚',     intervals: [0, 2, 3, 5, 7, 9, 10] },
+  'Phrygian':        { name: 'Phrygian',        nameZh: '弗里几亚',   intervals: [0, 1, 3, 5, 7, 8, 10] },
+  'Lydian':          { name: 'Lydian',          nameZh: '利底亚',     intervals: [0, 2, 4, 6, 7, 9, 11] },
+  'Mixolydian':      { name: 'Mixolydian',      nameZh: '混合利底亚', intervals: [0, 2, 4, 5, 7, 9, 10] },
+  'Aeolian':         { name: 'Aeolian',         nameZh: '自然小调',   intervals: [0, 2, 3, 5, 7, 8, 10] },
+  'Locrian':         { name: 'Locrian',         nameZh: '洛克里亚',   intervals: [0, 1, 3, 5, 6, 8, 10] },
+  'MajorPentatonic': { name: 'Major Pentatonic', nameZh: '大调五声',  intervals: [0, 2, 4, 7, 9] },
+  'MinorPentatonic': { name: 'Minor Pentatonic', nameZh: '小调五声',  intervals: [0, 3, 5, 7, 10] },
+  'Blues':           { name: 'Blues',            nameZh: '蓝调',       intervals: [0, 3, 5, 6, 7, 10] },
+};
+
+// 和弦质量 → 最佳匹配音阶的映射规则
+// 每个和弦质量对应一个"正确答案"音阶（根音相同）
+const CHORD_SCALE_MAP: Record<ChordQuality, string> = {
+  'major':    'Ionian',
+  'minor':    'Dorian',
+  'dominant7': 'Mixolydian',
+  'minor7':   'Dorian',
+  'maj7':     'Ionian',
+  'dim':      'Locrian',
+  'aug':      'Lydian',
+  'sus4':     'Mixolydian',
+  'sus2':     'Ionian',
+  'm7b5':     'Locrian',
+};
+
+// 和弦质量 → 用于生成干扰项的候选音阶池
+const DISTRACTOR_POOLS: Record<ChordQuality, string[]> = {
+  'major':    ['Mixolydian', 'Lydian', 'Dorian', 'Aeolian', 'MajorPentatonic'],
+  'minor':    ['Aeolian', 'Phrygian', 'MinorPentatonic', 'Blues', 'Locrian'],
+  'dominant7': ['Ionian', 'Dorian', 'Blues', 'Lydian', 'Phrygian'],
+  'minor7':   ['Aeolian', 'Phrygian', 'MinorPentatonic', 'Blues', 'Locrian'],
+  'maj7':     ['Lydian', 'Mixolydian', 'Dorian', 'Aeolian', 'MajorPentatonic'],
+  'dim':      ['Aeolian', 'Phrygian', 'Dorian', 'MinorPentatonic', 'Blues'],
+  'aug':      ['Ionian', 'Mixolydian', 'Dorian', 'Phrygian', 'MajorPentatonic'],
+  'sus4':     ['Ionian', 'Dorian', 'Lydian', 'Aeolian', 'MajorPentatonic'],
+  'sus2':     ['Lydian', 'Mixolydian', 'Dorian', 'Aeolian', 'MajorPentatonic'],
+  'm7b5':     ['Aeolian', 'Phrygian', 'Dorian', 'MinorPentatonic', 'Blues'],
+};
+
+// 和弦题库：常见和弦及其质量
+interface ChordEntry {
+  name: string;
+  root: NoteName;
+  quality: ChordQuality;
+}
+
+const CHORD_POOL: ChordEntry[] = [
+  // 大三和弦
+  { name: 'C', root: 'C', quality: 'major' },
+  { name: 'D', root: 'D', quality: 'major' },
+  { name: 'E', root: 'E', quality: 'major' },
+  { name: 'F', root: 'F', quality: 'major' },
+  { name: 'G', root: 'G', quality: 'major' },
+  { name: 'A', root: 'A', quality: 'major' },
+  // 小三和弦
+  { name: 'Dm', root: 'D', quality: 'minor' },
+  { name: 'Em', root: 'E', quality: 'minor' },
+  { name: 'Am', root: 'A', quality: 'minor' },
+  { name: 'Bm', root: 'B', quality: 'minor' },
+  // 属七和弦
+  { name: 'C7', root: 'C', quality: 'dominant7' },
+  { name: 'D7', root: 'D', quality: 'dominant7' },
+  { name: 'E7', root: 'E', quality: 'dominant7' },
+  { name: 'G7', root: 'G', quality: 'dominant7' },
+  { name: 'A7', root: 'A', quality: 'dominant7' },
+  // 小七和弦
+  { name: 'Dm7', root: 'D', quality: 'minor7' },
+  { name: 'Em7', root: 'E', quality: 'minor7' },
+  { name: 'Am7', root: 'A', quality: 'minor7' },
+  { name: 'Bm7', root: 'B', quality: 'minor7' },
+  // 大七和弦
+  { name: 'Cmaj7', root: 'C', quality: 'maj7' },
+  { name: 'Dmaj7', root: 'D', quality: 'maj7' },
+  { name: 'Emaj7', root: 'E', quality: 'maj7' },
+  // 半减七
+  { name: 'Bm7b5', root: 'B', quality: 'm7b5' },
+];
+
+// 工具函数：随机打乱数组
+const shuffleArray = <T>(arr: T[]): T[] => {
+  const result = [...arr];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
+// 构建一个选项
+const buildOption = (root: NoteName, scaleKey: string): ChordScaleOption => {
+  const scale = EXTENDED_SCALES[scaleKey];
+  return {
+    key: `${root}-${scaleKey}`,
+    label: `${root} ${scale.name} (${scale.nameZh})`,
+    rootNote: root,
+    intervals: scale.intervals,
+  };
+};
+
+// 根据音阶音程获取音符列表（用于指板高亮）
+export const getScaleNotesFromIntervals = (root: NoteName, intervals: number[]): NoteName[] => {
+  const rootIndex = ALL_NOTES.indexOf(root);
+  return intervals.map(interval => ALL_NOTES[(rootIndex + interval) % 12]);
+};
+
+// 生成一道和弦音阶匹配题
+export const generateChordScaleQuestion = (excludeChordName?: string): ChordScaleQuestion => {
+  // 从题库中随机选一个和弦（排除上一题）
+  let pool = CHORD_POOL;
+  if (excludeChordName) {
+    pool = pool.filter(c => c.name !== excludeChordName);
+  }
+  const chord = pool[Math.floor(Math.random() * pool.length)];
+
+  // 正确答案
+  const correctScaleKey = CHORD_SCALE_MAP[chord.quality];
+  const correctOption = buildOption(chord.root, correctScaleKey);
+
+  // 生成3个干扰项
+  const distractorPool = DISTRACTOR_POOLS[chord.quality].filter(s => s !== correctScaleKey);
+  const selectedDistractors = shuffleArray(distractorPool).slice(0, 3);
+  const distractorOptions = selectedDistractors.map(scaleKey => buildOption(chord.root, scaleKey));
+
+  // 合并并打乱选项
+  const options = shuffleArray([correctOption, ...distractorOptions]);
+
+  return {
+    chordName: chord.name,
+    chordRoot: chord.root,
+    chordQuality: chord.quality,
+    correctAnswer: correctOption.key,
+    options,
+  };
 };

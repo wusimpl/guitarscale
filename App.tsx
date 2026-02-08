@@ -1,13 +1,13 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Fretboard from './components/Fretboard';
 import AITutor from './components/AITutor';
-import { ALL_NOTES, SCALE_PATTERNS, COMMON_CHORDS, getNoteAtFret } from './utils/musicTheory';
-import { NoteName, ScaleType, ChordShape, ChordCategory, PracticeResult, PracticeStatus, FretRange } from './types';
-import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map } from 'lucide-react';
+import { ALL_NOTES, SCALE_PATTERNS, COMMON_CHORDS, getNoteAtFret, generateChordScaleQuestion, getScaleNotesFromIntervals } from './utils/musicTheory';
+import { NoteName, ScaleType, ChordShape, ChordCategory, PracticeResult, PracticeStatus, FretRange, ChordScaleQuestion } from './types';
+import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map, Zap, Shuffle, Timer, Check, X, ArrowRight } from 'lucide-react';
 import { playCorrectSound, playIncorrectSound, playSuccessSound, playChordSound } from './utils/audioFeedback';
 
-type ViewMode = 'scale' | 'chord' | 'practice';
+type ViewMode = 'scale' | 'chord' | 'practice' | 'chordScale';
 
 const FRET_RANGE_PRESETS: FretRange[] = [
   { start: 0, end: 3, label: '0-3品 (开放区)' },
@@ -33,6 +33,22 @@ const App: React.FC = () => {
   const [practiceTargetNote, setPracticeTargetNote] = useState<NoteName>('C');
   const [practiceResults, setPracticeResults] = useState<PracticeResult>({});
   const [practiceFretRange, setPracticeFretRange] = useState<FretRange>(FRET_RANGE_PRESETS[0]);
+  const [randomMode, setRandomMode] = useState<boolean>(false);
+
+  // 计时/计分 State
+  const [practiceTimer, setPracticeTimer] = useState<number>(0);
+  const [practiceTimerRunning, setPracticeTimerRunning] = useState<boolean>(false);
+  const [practiceScore, setPracticeScore] = useState<number>(0);
+  const [practiceMistakes, setPracticeMistakes] = useState<number>(0);
+  const timerRef = useRef<number | null>(null);
+
+  // 和弦音阶匹配 State
+  const [csQuestion, setCsQuestion] = useState<ChordScaleQuestion | null>(null);
+  const [csSelectedKey, setCsSelectedKey] = useState<string | null>(null);
+  const [csAnswered, setCsAnswered] = useState<boolean>(false);
+  const [csCorrectCount, setCsCorrectCount] = useState<number>(0);
+  const [csTotalCount, setCsTotalCount] = useState<number>(0);
+  const [csShowScale, setCsShowScale] = useState<boolean>(false);
 
   const filteredChords = useMemo(() => {
     const list = chordFilter === ChordCategory.ALL 
@@ -48,9 +64,69 @@ const App: React.FC = () => {
      return COMMON_CHORDS.find(c => c.name === activeChordName) || null;
   }, [viewMode, activeChordName]);
 
-  const resetPractice = () => {
+  const resetPractice = useCallback(() => {
     setPracticeResults({});
-  };
+    setPracticeScore(0);
+    setPracticeMistakes(0);
+    setPracticeTimer(0);
+    setPracticeTimerRunning(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  }, []);
+
+  // 计时器逻辑
+  useEffect(() => {
+    if (practiceTimerRunning) {
+      timerRef.current = window.setInterval(() => {
+        setPracticeTimer(prev => prev + 1);
+      }, 1000);
+    } else if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [practiceTimerRunning]);
+
+  // 和弦音阶匹配：初始化题目
+  useEffect(() => {
+    if (viewMode === 'chordScale' && !csQuestion) {
+      setCsQuestion(generateChordScaleQuestion());
+    }
+  }, [viewMode, csQuestion]);
+
+  // 和弦音阶匹配：生成下一题
+  const csNextQuestion = useCallback(() => {
+    setCsQuestion(generateChordScaleQuestion(csQuestion?.chordName));
+    setCsSelectedKey(null);
+    setCsAnswered(false);
+    setCsShowScale(false);
+  }, [csQuestion]);
+
+  // 和弦音阶匹配：选择答案
+  const csHandleSelect = useCallback((key: string) => {
+    if (csAnswered) return;
+    setCsSelectedKey(key);
+    setCsAnswered(true);
+    setCsTotalCount(prev => prev + 1);
+    if (csQuestion && key === csQuestion.correctAnswer) {
+      setCsCorrectCount(prev => prev + 1);
+      playSuccessSound();
+      setCsShowScale(true);
+    } else {
+      playIncorrectSound();
+      // 错误时也显示正确答案的音阶
+      setCsShowScale(true);
+    }
+  }, [csAnswered, csQuestion]);
+
+  // 和弦音阶匹配：当前正确答案对应的音阶音符（用于指板高亮）
+  const csScaleNotes = useMemo(() => {
+    if (!csQuestion || !csShowScale) return null;
+    const correctOption = csQuestion.options.find(o => o.key === csQuestion.correctAnswer);
+    if (!correctOption) return null;
+    return {
+      rootNote: correctOption.rootNote,
+      notes: getScaleNotesFromIntervals(correctOption.rootNote, correctOption.intervals),
+    };
+  }, [csQuestion, csShowScale]);
 
   // Calculate total notes in current practice range for audio logic
   const totalNotesInCurrentRange = useMemo(() => {
@@ -70,22 +146,40 @@ const App: React.FC = () => {
       const foundCount = Object.values(practiceResults).filter(v => v === 'correct').length;
       if (foundCount === totalNotesInCurrentRange) {
         playSuccessSound();
+        setPracticeTimerRunning(false);
+        // 随机模式：完成后自动切换下一个音
+        if (randomMode) {
+          setTimeout(() => {
+            const otherNotes = ALL_NOTES.filter(n => n !== practiceTargetNote);
+            const nextNote = otherNotes[Math.floor(Math.random() * otherNotes.length)];
+            setPracticeTargetNote(nextNote);
+            setPracticeResults({});
+            setPracticeTimerRunning(true);
+          }, 1500);
+        }
       }
     }
-  }, [practiceResults, totalNotesInCurrentRange, viewMode]);
+  }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote]);
 
   const handlePracticeClick = (stringIndex: number, fret: number) => {
     const { note } = getNoteAtFret(stringIndex, fret);
     const key = `${stringIndex}-${fret}`;
-    
+
+    // 首次点击时启动计时器
+    if (!practiceTimerRunning && Object.keys(practiceResults).length === 0) {
+      setPracticeTimerRunning(true);
+    }
+
     // Prevent re-clicking already found notes
     if (practiceResults[key] === 'correct') return;
 
     if (note === practiceTargetNote) {
       playCorrectSound(stringIndex, fret);
       setPracticeResults(prev => ({ ...prev, [key]: 'correct' }));
+      setPracticeScore(prev => prev + 1);
     } else {
       playIncorrectSound();
+      setPracticeMistakes(prev => prev + 1);
       setPracticeResults(prev => ({ ...prev, [key]: 'incorrect' }));
       // Temporary "incorrect" state
       setTimeout(() => {
@@ -136,6 +230,12 @@ const App: React.FC = () => {
                 className={`flex items-center justify-center gap-1.5 sm:gap-2.5 flex-1 md:flex-none px-3 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${viewMode === 'practice' ? 'bg-gradient-to-br from-blue-600 to-blue-800 text-white shadow-xl ring-1 ring-blue-500' : 'text-neutral-500 hover:text-neutral-300'}`}
              >
                 <Target size={18} /> <span className="hidden sm:inline">位置练习</span><span className="sm:hidden">练习</span>
+             </button>
+             <button
+                onClick={() => setViewMode('chordScale')}
+                className={`flex items-center justify-center gap-1.5 sm:gap-2.5 flex-1 md:flex-none px-3 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${viewMode === 'chordScale' ? 'bg-gradient-to-br from-teal-600 to-teal-800 text-white shadow-xl ring-1 ring-teal-500' : 'text-neutral-500 hover:text-neutral-300'}`}
+             >
+                <Zap size={18} /> <span className="hidden sm:inline">和弦配阶</span><span className="sm:hidden">配阶</span>
              </button>
           </div>
         </div>
@@ -269,8 +369,9 @@ const App: React.FC = () => {
           )}
 
           {viewMode === 'practice' && (
-             <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-10 items-start animate-in fade-in slide-in-from-top-4 duration-500">
-                <div className="lg:col-span-6 space-y-3 sm:space-y-4">
+             <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-10 items-start">
+                <div className="lg:col-span-5 space-y-3 sm:space-y-4">
                   <h3 className="text-xs uppercase text-neutral-500 font-black tracking-[0.2em] flex items-center gap-2">
                     <ChevronRight size={14} className="text-blue-500" /> 1. 选择练习音符 (Note)
                   </h3>
@@ -279,10 +380,12 @@ const App: React.FC = () => {
                       <button
                         key={note}
                         onClick={() => { setPracticeTargetNote(note); resetPractice(); }}
+                        disabled={randomMode}
                         className={`h-11 rounded-xl text-sm font-black transition-all border-2
-                          ${practiceTargetNote === note 
-                            ? 'bg-blue-500/10 border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.2)]' 
+                          ${practiceTargetNote === note
+                            ? 'bg-blue-500/10 border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.2)]'
                             : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300'}
+                          ${randomMode ? 'opacity-50 cursor-not-allowed' : ''}
                       `}
                       >
                         {note}
@@ -291,7 +394,7 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="lg:col-span-6 space-y-3 sm:space-y-4">
+                <div className="lg:col-span-4 space-y-3 sm:space-y-4">
                   <h3 className="text-xs uppercase text-neutral-500 font-black tracking-[0.2em] flex items-center gap-2">
                     <ChevronRight size={14} className="text-blue-500" /> 2. 选择品格范围 (Fret Range)
                   </h3>
@@ -310,13 +413,129 @@ const App: React.FC = () => {
                          {range.label}
                        </button>
                     ))}
-                    <button 
+                  </div>
+                </div>
+
+                <div className="lg:col-span-3 space-y-3 sm:space-y-4">
+                  <h3 className="text-xs uppercase text-neutral-500 font-black tracking-[0.2em] flex items-center gap-2">
+                    <ChevronRight size={14} className="text-blue-500" /> 3. 练习模式
+                  </h3>
+                  <div className="flex flex-col gap-2">
+                    <button
+                      onClick={() => { setRandomMode(!randomMode); resetPractice(); }}
+                      className={`h-11 rounded-xl border-2 font-bold flex items-center justify-center gap-2 text-xs transition-all
+                        ${randomMode
+                          ? 'bg-blue-600/20 border-blue-400 text-blue-400'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:border-neutral-700'}
+                      `}
+                    >
+                      <Shuffle size={14} /> {randomMode ? '随机模式 开' : '随机模式 关'}
+                    </button>
+                    <button
                       onClick={resetPractice}
                       className="h-11 rounded-xl bg-neutral-800 border-2 border-neutral-700 text-neutral-400 font-bold flex items-center justify-center gap-2 hover:bg-red-900/20 hover:text-red-400 hover:border-red-900/30 transition-all text-xs"
                     >
                       <RotateCcw size={14} /> 重置进度
                     </button>
                   </div>
+                </div>
+                </div>
+
+                {/* 计时/计分面板 */}
+                <div className="flex flex-wrap items-center gap-4 sm:gap-8 bg-neutral-900/50 border border-neutral-800/50 rounded-xl px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Timer size={16} className="text-blue-400" />
+                    <span className="text-xs text-neutral-500 font-bold">用时</span>
+                    <span className="text-lg font-mono font-black text-white min-w-[4rem]">
+                      {Math.floor(practiceTimer / 60).toString().padStart(2, '0')}:{(practiceTimer % 60).toString().padStart(2, '0')}
+                    </span>
+                  </div>
+                  <div className="h-6 w-px bg-neutral-700" />
+                  <div className="flex items-center gap-2">
+                    <Check size={16} className="text-emerald-400" />
+                    <span className="text-xs text-neutral-500 font-bold">正确</span>
+                    <span className="text-lg font-mono font-black text-emerald-400">{practiceScore}</span>
+                  </div>
+                  <div className="h-6 w-px bg-neutral-700" />
+                  <div className="flex items-center gap-2">
+                    <X size={16} className="text-red-400" />
+                    <span className="text-xs text-neutral-500 font-bold">错误</span>
+                    <span className="text-lg font-mono font-black text-red-400">{practiceMistakes}</span>
+                  </div>
+                  {randomMode && (
+                    <>
+                      <div className="h-6 w-px bg-neutral-700" />
+                      <div className="flex items-center gap-2">
+                        <Shuffle size={14} className="text-blue-400 animate-pulse" />
+                        <span className="text-xs text-blue-400 font-bold">随机模式 · 完成后自动切换</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+             </div>
+          )}
+
+          {viewMode === 'chordScale' && csQuestion && (
+             <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-top-4 duration-500">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] text-teal-400 font-bold uppercase tracking-widest mb-1">当前和弦</span>
+                      <div className="flex items-center gap-3">
+                        <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg shadow-teal-900/40">
+                          {csQuestion.chordName}
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-white text-sm font-bold">选择最匹配的音阶</span>
+                          <span className="text-neutral-500 text-xs">即兴演奏时，这个和弦上应该用什么音阶？</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-xs bg-teal-500/10 text-teal-400 px-3 py-1.5 rounded-full font-bold border border-teal-500/20">
+                      {csCorrectCount} / {csTotalCount} 正确
+                    </span>
+                    {csAnswered && (
+                      <button
+                        onClick={csNextQuestion}
+                        className="flex items-center gap-2 px-5 py-2.5 bg-teal-600 hover:bg-teal-500 rounded-xl text-white font-bold text-sm transition-all active:scale-95 shadow-lg shadow-teal-900/30"
+                      >
+                        下一题 <ArrowRight size={16} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {csQuestion.options.map(option => {
+                    let btnClass = 'bg-neutral-900 border-neutral-700 text-neutral-300 hover:border-teal-500 hover:text-white';
+                    if (csAnswered) {
+                      if (option.key === csQuestion.correctAnswer) {
+                        btnClass = 'bg-emerald-600/20 border-emerald-400 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.2)]';
+                      } else if (option.key === csSelectedKey) {
+                        btnClass = 'bg-red-600/20 border-red-400 text-red-300';
+                      } else {
+                        btnClass = 'bg-neutral-900 border-neutral-800 text-neutral-600 opacity-50';
+                      }
+                    }
+                    return (
+                      <button
+                        key={option.key}
+                        onClick={() => csHandleSelect(option.key)}
+                        disabled={csAnswered}
+                        className={`px-5 py-4 rounded-xl border-2 font-bold text-left transition-all flex items-center justify-between ${btnClass} ${csAnswered ? 'cursor-default' : 'cursor-pointer'}`}
+                      >
+                        <span className="text-sm">{option.label}</span>
+                        {csAnswered && option.key === csQuestion.correctAnswer && (
+                          <Check size={18} className="text-emerald-400" />
+                        )}
+                        {csAnswered && option.key === csSelectedKey && option.key !== csQuestion.correctAnswer && (
+                          <X size={18} className="text-red-400" />
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
              </div>
           )}
@@ -328,16 +547,17 @@ const App: React.FC = () => {
       <main className="flex-1 flex flex-col items-center justify-center py-6 sm:py-12 px-2 sm:px-4 relative overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full opacity-20 pointer-events-none bg-[radial-gradient(circle_at_center,rgba(59,130,246,0.05)_0%,transparent_70%)]"></div>
         
-        <Fretboard 
-          rootNote={rootNote} 
-          scaleType={scaleType} 
-          showIntervals={showIntervals} 
+        <Fretboard
+          rootNote={viewMode === 'chordScale' && csScaleNotes ? csScaleNotes.rootNote : rootNote}
+          scaleType={scaleType}
+          showIntervals={viewMode === 'chordScale' && csShowScale ? true : showIntervals}
           activeChord={activeChord}
           practiceMode={viewMode === 'practice'}
           practiceTargetNote={practiceTargetNote}
           practiceResults={practiceResults}
           practiceFretRange={practiceFretRange}
           onPracticeClick={handlePracticeClick}
+          customScaleNotes={csScaleNotes?.notes}
         />
 
         {/* Legend Panel */}
@@ -360,6 +580,26 @@ const App: React.FC = () => {
                     <div className="w-4 h-4 sm:w-5 sm:h-5 bg-neutral-800/80 opacity-50 border border-neutral-700 group-hover:scale-125 transition-transform"></div>
                     <span className="text-neutral-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">非练习区</span>
                   </div>
+                </>
+             ) : viewMode === 'chordScale' ? (
+                <>
+                  {csShowScale ? (
+                    <>
+                      <div className="flex items-center gap-2 sm:gap-3 group">
+                        <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-gradient-to-br from-amber-300 to-amber-600 border border-amber-200 shadow-[0_0_10px_rgba(245,158,11,0.4)] group-hover:scale-125 transition-transform"></div>
+                        <span className="text-neutral-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">根音 (Root)</span>
+                      </div>
+                      <div className="flex items-center gap-2 sm:gap-3 group">
+                        <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-700 border border-emerald-300 group-hover:scale-125 transition-transform"></div>
+                        <span className="text-neutral-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">匹配音阶内音</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <Zap size={16} className="text-teal-400" />
+                      <span className="text-neutral-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">选择答案后，指板将高亮显示正确音阶</span>
+                    </div>
+                  )}
                 </>
              ) : (
                 <>

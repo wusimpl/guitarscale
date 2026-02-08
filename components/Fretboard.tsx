@@ -15,24 +15,27 @@ interface FretboardProps {
   practiceResults?: PracticeResult;
   practiceFretRange?: FretRange;
   onPracticeClick?: (stringIndex: number, fret: number) => void;
+  customScaleNotes?: NoteName[];
 }
 
 const STRINGS = 6;
 const FRETS = 12;
 
-const Fretboard: React.FC<FretboardProps> = ({ 
-  rootNote, scaleType, showIntervals, activeChord, 
-  practiceMode, practiceTargetNote, practiceResults = {}, practiceFretRange, onPracticeClick 
+const Fretboard: React.FC<FretboardProps> = ({
+  rootNote, scaleType, showIntervals, activeChord,
+  practiceMode, practiceTargetNote, practiceResults = {}, practiceFretRange, onPracticeClick,
+  customScaleNotes
 }) => {
   const [selectedNote, setSelectedNote] = useState<FretboardNote | null>(null);
 
   useEffect(() => {
     setSelectedNote(null);
-  }, [activeChord, rootNote, scaleType, practiceMode, practiceTargetNote, practiceFretRange]);
+  }, [activeChord, rootNote, scaleType, practiceMode, practiceTargetNote, practiceFretRange, customScaleNotes]);
 
   const fretboardData = useMemo(() => {
     const data: FretboardNote[] = [];
-    const scaleNotes = getScaleNotes(rootNote, scaleType);
+    // 优先使用自定义音阶（和弦音阶匹配模式），否则用常规音阶
+    const scaleNotes = customScaleNotes || getScaleNotes(rootNote, scaleType);
 
     for (let s = 0; s < STRINGS; s++) {
       let chordNoteDef = null;
@@ -54,19 +57,19 @@ const Fretboard: React.FC<FretboardProps> = ({
 
         if (activeChord) {
            if (isMuted && f === 0) {
-              isInScale = true; 
+              isInScale = true;
            } else if (chordNoteDef && chordNoteDef.fret === f) {
               isInScale = true;
               const chordRootMatch = activeChord.name.match(/^[A-G]#?/);
               const chordRoot = chordRootMatch ? chordRootMatch[0] : '';
-              isRoot = note === chordRoot; 
+              isRoot = note === chordRoot;
               finger = chordNoteDef.finger || (f === 0 ? 'O' : undefined);
            }
         } else {
            isInScale = scaleNotes.includes(note);
            isRoot = note === rootNote;
         }
-        
+
         data.push({
           stringIndex: s,
           fret: f,
@@ -81,7 +84,7 @@ const Fretboard: React.FC<FretboardProps> = ({
       }
     }
     return data;
-  }, [rootNote, scaleType, activeChord]);
+  }, [rootNote, scaleType, activeChord, customScaleNotes]);
 
   // Calculate total notes in current practice range
   const totalNotesInRange = useMemo(() => {
