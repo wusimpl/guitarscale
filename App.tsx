@@ -47,6 +47,7 @@ const App: React.FC = () => {
   const [practiceScore, setPracticeScore] = useState<number>(0);
   const [practiceMistakes, setPracticeMistakes] = useState<number>(0);
   const timerRef = useRef<number | null>(null);
+  const randomSwitchTimeoutRef = useRef<number | null>(null);
 
   // 和弦音阶匹配 State
   const [csQuestion, setCsQuestion] = useState<ChordScaleQuestion | null>(null);
@@ -55,6 +56,13 @@ const App: React.FC = () => {
   const [csCorrectCount, setCsCorrectCount] = useState<number>(0);
   const [csTotalCount, setCsTotalCount] = useState<number>(0);
   const [csShowScale, setCsShowScale] = useState<boolean>(false);
+
+  const clearRandomSwitchTimeout = useCallback(() => {
+    if (randomSwitchTimeoutRef.current) {
+      clearTimeout(randomSwitchTimeoutRef.current);
+      randomSwitchTimeoutRef.current = null;
+    }
+  }, []);
 
   const filteredChords = useMemo(() => {
     const list = chordFilter === ChordCategory.ALL 
@@ -76,20 +84,46 @@ const App: React.FC = () => {
     setPracticeMistakes(0);
     setPracticeTimer(0);
     setPracticeTimerRunning(false);
-    if (timerRef.current) clearInterval(timerRef.current);
-  }, []);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    clearRandomSwitchTimeout();
+  }, [clearRandomSwitchTimeout]);
 
   // 计时器逻辑
   useEffect(() => {
     if (practiceTimerRunning) {
+      if (timerRef.current) clearInterval(timerRef.current);
       timerRef.current = window.setInterval(() => {
         setPracticeTimer(prev => prev + 1);
       }, 1000);
     } else if (timerRef.current) {
       clearInterval(timerRef.current);
+      timerRef.current = null;
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
   }, [practiceTimerRunning]);
+
+  // 离开练习模式时暂停计时并清理随机切题任务
+  useEffect(() => {
+    if (viewMode !== 'practice') {
+      setPracticeTimerRunning(false);
+      clearRandomSwitchTimeout();
+    }
+  }, [viewMode, clearRandomSwitchTimeout]);
+
+  // 卸载时兜底清理随机切题任务
+  useEffect(() => {
+    return () => {
+      clearRandomSwitchTimeout();
+    };
+  }, [clearRandomSwitchTimeout]);
 
   // 和弦音阶匹配：初始化题目
   useEffect(() => {
@@ -155,17 +189,19 @@ const App: React.FC = () => {
         setPracticeTimerRunning(false);
         // 随机模式：完成后自动切换下一个音
         if (randomMode) {
-          setTimeout(() => {
+          clearRandomSwitchTimeout();
+          randomSwitchTimeoutRef.current = window.setTimeout(() => {
             const otherNotes = practiceNotes.filter(n => n !== practiceTargetNote);
             const nextNote = otherNotes[Math.floor(Math.random() * otherNotes.length)];
             setPracticeTargetNote(nextNote);
             setPracticeResults({});
             setPracticeTimerRunning(true);
+            randomSwitchTimeoutRef.current = null;
           }, 1500);
         }
       }
     }
-  }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote, practiceNotes]);
+  }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote, practiceNotes, clearRandomSwitchTimeout]);
 
   const handlePracticeClick = (stringIndex: number, fret: number) => {
     const { note } = getNoteAtFret(stringIndex, fret);
@@ -509,8 +545,18 @@ const App: React.FC = () => {
                     <div className="flex flex-col">
                       <span className="text-[10px] text-teal-400 font-bold uppercase tracking-widest mb-1">当前和弦</span>
                       <div className="flex items-center gap-3">
-                        <div className="w-14 h-14 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center text-2xl font-black text-white shadow-lg shadow-teal-900/40">
-                          {csQuestion.chordName}
+                        <div className="min-w-14 h-14 px-2 bg-gradient-to-br from-teal-500 to-teal-700 rounded-xl flex items-center justify-center shadow-lg shadow-teal-900/40">
+                          <span
+                            className={`font-black text-white leading-none whitespace-nowrap ${
+                              csQuestion.chordName.length >= 5
+                                ? 'text-lg'
+                                : csQuestion.chordName.length >= 4
+                                ? 'text-xl'
+                                : 'text-2xl'
+                            }`}
+                          >
+                            {csQuestion.chordName}
+                          </span>
                         </div>
                         <div className="flex flex-col">
                           <span className="text-white text-sm font-bold">选择最匹配的音阶</span>
@@ -584,7 +630,7 @@ const App: React.FC = () => {
           practiceResults={practiceResults}
           practiceFretRange={practiceFretRange}
           onPracticeClick={handlePracticeClick}
-          customScaleNotes={csScaleNotes?.notes}
+          customScaleNotes={viewMode === 'chordScale' ? (csShowScale && csScaleNotes ? csScaleNotes.notes : []) : undefined}
         />
 
         {/* Legend Panel */}
