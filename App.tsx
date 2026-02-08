@@ -34,6 +34,12 @@ const App: React.FC = () => {
   const [practiceResults, setPracticeResults] = useState<PracticeResult>({});
   const [practiceFretRange, setPracticeFretRange] = useState<FretRange>(FRET_RANGE_PRESETS[0]);
   const [randomMode, setRandomMode] = useState<boolean>(false);
+  const [includeSharps, setIncludeSharps] = useState<boolean>(false);
+
+  // 根据 includeSharps 过滤可选音符
+  const practiceNotes = useMemo(() => {
+    return includeSharps ? ALL_NOTES : ALL_NOTES.filter(n => !n.includes('#'));
+  }, [includeSharps]);
 
   // 计时/计分 State
   const [practiceTimer, setPracticeTimer] = useState<number>(0);
@@ -150,7 +156,7 @@ const App: React.FC = () => {
         // 随机模式：完成后自动切换下一个音
         if (randomMode) {
           setTimeout(() => {
-            const otherNotes = ALL_NOTES.filter(n => n !== practiceTargetNote);
+            const otherNotes = practiceNotes.filter(n => n !== practiceTargetNote);
             const nextNote = otherNotes[Math.floor(Math.random() * otherNotes.length)];
             setPracticeTargetNote(nextNote);
             setPracticeResults({});
@@ -159,7 +165,7 @@ const App: React.FC = () => {
         }
       }
     }
-  }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote]);
+  }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote, practiceNotes]);
 
   const handlePracticeClick = (stringIndex: number, fret: number) => {
     const { note } = getNoteAtFret(stringIndex, fret);
@@ -375,22 +381,43 @@ const App: React.FC = () => {
                   <h3 className="text-xs uppercase text-neutral-500 font-black tracking-[0.2em] flex items-center gap-2">
                     <ChevronRight size={14} className="text-blue-500" /> 1. 选择练习音符 (Note)
                   </h3>
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                    {ALL_NOTES.map(note => (
-                      <button
-                        key={note}
-                        onClick={() => { setPracticeTargetNote(note); resetPractice(); }}
-                        disabled={randomMode}
-                        className={`h-11 rounded-xl text-sm font-black transition-all border-2
-                          ${practiceTargetNote === note
-                            ? 'bg-blue-500/10 border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.2)]'
-                            : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300'}
-                          ${randomMode ? 'opacity-50 cursor-not-allowed' : ''}
-                      `}
-                      >
-                        {note}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="grid grid-cols-4 sm:grid-cols-7 gap-2 flex-1">
+                      {practiceNotes.map(note => (
+                        <button
+                          key={note}
+                          onClick={() => { setPracticeTargetNote(note); resetPractice(); }}
+                          disabled={randomMode}
+                          className={`h-11 rounded-xl text-sm font-black transition-all border-2
+                            ${practiceTargetNote === note
+                              ? 'bg-blue-500/10 border-blue-500 text-blue-400 shadow-[0_0_15px_rgba(59,130,246,0.2)]'
+                              : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:border-neutral-700 hover:text-neutral-300'}
+                            ${randomMode ? 'opacity-50 cursor-not-allowed' : ''}
+                        `}
+                        >
+                          {note}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 半音开关 */}
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      onClick={() => {
+                        const next = !includeSharps;
+                        setIncludeSharps(next);
+                        // 关闭半音时，若当前选中的是半音，自动切回 C
+                        if (!next && practiceTargetNote.includes('#')) {
+                          setPracticeTargetNote('C');
+                        }
+                        resetPractice();
+                      }}
+                      className={`relative w-11 h-6 rounded-full transition-colors duration-300 ${includeSharps ? 'bg-blue-500' : 'bg-neutral-700'}`}
+                      aria-label="包含半音"
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ${includeSharps ? 'translate-x-5' : 'translate-x-0'}`} />
+                    </button>
+                    <span className="text-xs text-neutral-400 font-bold">包含半音 (♯)</span>
                   </div>
                 </div>
 
