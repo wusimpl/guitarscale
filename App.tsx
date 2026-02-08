@@ -112,9 +112,9 @@ const App: React.FC = () => {
              </div>
              <div>
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight flex items-center gap-2">
-                   指板大师
+                   弦萤
                 </h1>
-                <p className="text-neutral-500 text-[10px] sm:text-xs font-medium tracking-wide uppercase">Guitar Fretboard Master</p>
+                <p className="text-neutral-500 text-[10px] sm:text-xs font-medium tracking-wide uppercase">StringGlow · 吉他新手指板练习</p>
              </div>
           </div>
 
@@ -373,10 +373,12 @@ const App: React.FC = () => {
                           <span className="text-neutral-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">音阶内音 (In Scale)</span>
                       </div>
                   )}
-                  <div className="flex items-center gap-2 sm:gap-3 group">
-                    <div className={`w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 ${viewMode === 'chord' ? 'border-purple-500 text-purple-400' : 'border-neutral-500 text-neutral-400'} flex items-center justify-center text-[10px] group-hover:scale-125 transition-transform font-bold`}>1</div>
-                    <span className="text-neutral-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">指法 (Fingering)</span>
-                  </div>
+                  {viewMode === 'chord' && (
+                      <div className="flex items-center gap-2 sm:gap-3 group">
+                        <div className="w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 border-purple-500 text-purple-400 flex items-center justify-center text-[10px] group-hover:scale-125 transition-transform font-bold">1</div>
+                        <span className="text-neutral-400 text-[10px] sm:text-xs font-bold uppercase tracking-widest">指法 (Fingering)</span>
+                      </div>
+                  )}
                 </>
              )}
         </div>
@@ -384,7 +386,7 @@ const App: React.FC = () => {
 
       <footer className="py-8 text-center border-t border-neutral-900">
         <p className="text-neutral-600 text-[10px] font-bold uppercase tracking-[0.3em]">
-          Interactive Fretboard Engine &copy; 2024 Design by Gemini
+          弦萤 StringGlow &copy; 2025 Designed by wusimpl
         </p>
       </footer>
 

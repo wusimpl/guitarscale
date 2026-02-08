@@ -102,7 +102,7 @@ const Fretboard: React.FC<FretboardProps> = ({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between w-full px-3 sm:px-8 py-2 sm:py-0 h-full animate-in fade-in duration-300 gap-2 sm:gap-0">
            <div className="flex items-center gap-3 sm:gap-6">
               <div className="flex flex-col">
-                <span className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">Target Note</span>
+                <span className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">目标音符</span>
                 <div className="flex items-center gap-2 sm:gap-3">
                    <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-600 rounded-lg flex items-center justify-center text-xl sm:text-2xl font-black text-white shadow-lg shadow-blue-900/40">
                       {practiceTargetNote}
@@ -116,7 +116,7 @@ const Fretboard: React.FC<FretboardProps> = ({
 
            <div className="flex items-center gap-4 sm:gap-8">
               <div className="flex flex-col items-end">
-                <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-1">Progress</span>
+                <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-1">进度</span>
                 <div className="flex items-center gap-2">
                    <span className="text-xl sm:text-3xl font-mono font-black text-white">{foundCount}</span>
                    <span className="text-neutral-600 text-base sm:text-xl">/</span>
@@ -140,7 +140,7 @@ const Fretboard: React.FC<FretboardProps> = ({
             <div className="flex items-center justify-between w-full px-3 sm:px-8 h-full animate-in fade-in zoom-in-95 duration-200">
                 <div className="flex items-center gap-4 sm:gap-8">
                     <div className="flex flex-col">
-                        <span className="text-[10px] text-purple-400 font-bold uppercase tracking-[0.2em] mb-1">Chord Structure</span>
+                        <span className="text-[10px] text-purple-400 font-bold uppercase tracking-[0.2em] mb-1">和弦构成</span>
                         <div className="flex items-center gap-1 sm:gap-2">
                             {chordNotes.map((n, i) => (
                                 <React.Fragment key={n}>
@@ -186,7 +186,7 @@ const Fretboard: React.FC<FretboardProps> = ({
         <div className="flex items-center justify-between w-full px-3 sm:px-8 h-full animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center gap-3 sm:gap-8">
                 <div className="flex flex-col">
-                  <span className="text-[10px] text-amber-500/70 font-bold uppercase tracking-[0.2em] mb-1">Scientific Pitch</span>
+                  <span className="text-[10px] text-amber-500/70 font-bold uppercase tracking-[0.2em] mb-1">科学音高</span>
                   <div className="text-2xl sm:text-4xl font-black text-white font-mono tracking-tighter drop-shadow-[0_2px_10px_rgba(255,255,255,0.1)]">
                       {scientific}
                   </div>
@@ -195,7 +195,7 @@ const Fretboard: React.FC<FretboardProps> = ({
                 <div className="h-8 sm:h-10 w-[1px] bg-neutral-700 mx-1 sm:mx-2" />
 
                 <div className="flex flex-col">
-                    <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-1">Frequency</span>
+                    <span className="text-[10px] text-neutral-500 font-bold uppercase tracking-widest mb-1">频率</span>
                     <span className="text-base sm:text-xl font-bold text-neutral-200 font-mono leading-none">
                       {freq} <span className="text-xs text-neutral-500 font-normal ml-0.5">Hz</span>
                     </span>
@@ -205,14 +205,14 @@ const Fretboard: React.FC<FretboardProps> = ({
             <div className="hidden md:flex flex-col items-center">
                  {fullInterval ? (
                     <>
-                      <span className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest mb-1.5">Interval Relation</span>
+                      <span className="text-[10px] text-emerald-500/70 font-bold uppercase tracking-widest mb-1.5">音程关系</span>
                       <div className="px-6 py-2 bg-neutral-900 border border-neutral-700 rounded-full text-emerald-100 font-bold text-sm shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
                           {fullInterval}
                       </div>
                     </>
                  ) : activeChord && (
                     <div className="flex flex-col items-center">
-                        <span className="text-[10px] text-purple-500/70 font-bold uppercase tracking-widest mb-1.5">Note Name</span>
+                        <span className="text-[10px] text-purple-500/70 font-bold uppercase tracking-widest mb-1.5">音名</span>
                         <div className="px-6 py-2 bg-neutral-900 border border-neutral-700 rounded-full text-purple-100 font-bold text-sm shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)]">
                             {selectedNote.note}
                         </div>
@@ -222,7 +222,7 @@ const Fretboard: React.FC<FretboardProps> = ({
 
             <div className="flex items-center gap-3 sm:gap-6">
                 <div className="text-right">
-                    <div className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-1">Position</div>
+                    <div className="text-[10px] text-neutral-500 uppercase font-bold tracking-widest mb-1">位置</div>
                     <div className="text-sm sm:text-lg text-white font-bold flex items-center gap-1 sm:gap-2">
                         <span className="bg-neutral-900 px-1.5 sm:px-2 py-0.5 rounded border border-neutral-800 text-amber-500">{stringNum} 弦</span>
                         <span className="text-neutral-700">/</span>
