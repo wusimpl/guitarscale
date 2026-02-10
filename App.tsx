@@ -187,12 +187,11 @@ const App: React.FC = () => {
       return;
     }
 
-    // 正确音符：在练习范围内找到匹配的位置，按 6→1 弦顺序
+    // 正确音符：精确匹配 MIDI（音名+八度），按 6→1 弦顺序点亮
     const openStringMidi = [64, 59, 55, 50, 45, 40];
     const targetMidi = (octave + 1) * 12 + ALL_NOTES.indexOf(note);
     const currentResults = practiceResultsRef.current;
 
-    // 第一轮：精确匹配 MIDI（音名+八度）
     let matchedKey: string | null = null;
     let matchedS = 0;
     let matchedF = 0;
@@ -206,24 +205,6 @@ const App: React.FC = () => {
             matchedS = s;
             matchedF = f;
             break;
-          }
-        }
-      }
-    }
-
-    // 第二轮：退化为只匹配音名（检测八度可能有偏差）
-    if (!matchedKey) {
-      for (let s = 5; s >= 0 && !matchedKey; s--) {
-        for (let f = practiceFretRange.start; f <= practiceFretRange.end; f++) {
-          const { note: posNote } = getNoteAtFret(s, f);
-          if (posNote === note) {
-            const key = `${s}-${f}`;
-            if (currentResults[key] !== 'correct') {
-              matchedKey = key;
-              matchedS = s;
-              matchedF = f;
-              break;
-            }
           }
         }
       }

@@ -65,7 +65,6 @@ export class PitchDetector {
   // 稳定性检测：连续多帧检测到同一音符才触发
   private lastDetectedMidi: number = -1;
   private stableCount: number = 0;
-  private lastTriggeredMidi: number = -1;
 
   // 冷却期：触发后一段时间内忽略检测，防止吉他余音误触发
   private cooldownUntil: number = 0;
@@ -115,7 +114,6 @@ export class PitchDetector {
       this.running = true;
       this.lastDetectedMidi = -1;
       this.stableCount = 0;
-      this.lastTriggeredMidi = -1;
       this.cooldownUntil = 0;
       this.onStatusChange?.('listening');
 
@@ -158,7 +156,6 @@ export class PitchDetector {
    * 重置已触发的音符记录（切换目标音符时调用）
    */
   resetTriggered(): void {
-    this.lastTriggeredMidi = -1;
     this.lastDetectedMidi = -1;
     this.stableCount = 0;
     // 重置时启动冷却期，防止旧音余音立刻触发新目标
@@ -239,11 +236,12 @@ export class PitchDetector {
       this.stableCount = 1;
     }
 
-    // 连续检测到同一音符达到稳定帧数，且不是刚触发过的同一个音
-    if (this.stableCount >= this.config.stableFrames && midiNote !== this.lastTriggeredMidi) {
-      this.lastTriggeredMidi = midiNote;
-      // 触发后进入冷却期，防止吉他余音误触发下一个音
+    // 连续检测到同一音符达到稳定帧数即触发，冷却期负责防止余音重复触发
+    if (this.stableCount >= this.config.stableFrames) {
+      // 触发后进入冷却期，防止吉他余音误触发
       this.cooldownUntil = performance.now() + this.config.cooldownMs;
+      this.stableCount = 0;
+      this.lastDetectedMidi = -1;
       this.onNoteDetected?.(result);
     }
   }
