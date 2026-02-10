@@ -73,6 +73,18 @@ const App: React.FC = () => {
     return includeSharps ? ALL_NOTES : ALL_NOTES.filter(n => !n.includes('#'));
   }, [includeSharps]);
 
+  const pickRandomPracticeNote = useCallback(
+    (excludeNote?: NoteName, notePool: NoteName[] = practiceNotes): NoteName => {
+      const basePool = notePool.length > 0 ? notePool : (['C'] as NoteName[]);
+      const filteredPool = excludeNote
+        ? basePool.filter(note => note !== excludeNote)
+        : basePool;
+      const finalPool = filteredPool.length > 0 ? filteredPool : basePool;
+      return finalPool[Math.floor(Math.random() * finalPool.length)];
+    },
+    [practiceNotes]
+  );
+
   // 计时/计分 State
   const [practiceTimer, setPracticeTimer] = useState<number>(0);
   const [practiceTimerRunning, setPracticeTimerRunning] = useState<boolean>(false);
@@ -122,6 +134,38 @@ const App: React.FC = () => {
     }
     clearRandomSwitchTimeout();
   }, [clearRandomSwitchTimeout]);
+
+  const handleIncludeSharpsToggle = useCallback(() => {
+    const nextIncludeSharps = !includeSharps;
+    const nextPracticeNotes = nextIncludeSharps
+      ? ALL_NOTES
+      : ALL_NOTES.filter(n => !n.includes('#'));
+
+    setIncludeSharps(nextIncludeSharps);
+
+    // 关闭半音时，若当前选中的是半音：固定模式回到 C，随机模式切到随机自然音
+    if (!nextIncludeSharps && practiceTargetNote.includes('#')) {
+      if (randomMode) {
+        setPracticeTargetNote(pickRandomPracticeNote(practiceTargetNote, nextPracticeNotes));
+      } else {
+        setPracticeTargetNote('C');
+      }
+    }
+
+    resetPractice();
+  }, [includeSharps, practiceTargetNote, randomMode, pickRandomPracticeNote, resetPractice]);
+
+  const handleRandomModeToggle = useCallback(() => {
+    setRandomMode(prev => {
+      const nextRandomMode = !prev;
+      // 开启随机模式时，立即随机一个起始音（且尽量避免与当前相同）
+      if (nextRandomMode) {
+        setPracticeTargetNote(current => pickRandomPracticeNote(current));
+      }
+      return nextRandomMode;
+    });
+    resetPractice();
+  }, [pickRandomPracticeNote, resetPractice]);
 
   // 收音模式：麦克风检测到音符时的回调处理
   // 使用 ref 保存最新的 practiceResults，避免闭包陈旧问题
@@ -376,8 +420,7 @@ const App: React.FC = () => {
         randomSwitchTimeoutRef.current = window.setTimeout(() => {
           if (randomMode) {
             // 随机模式：完成后自动切换下一个音
-            const otherNotes = practiceNotes.filter(n => n !== practiceTargetNote);
-            const nextNote = otherNotes[Math.floor(Math.random() * otherNotes.length)];
+            const nextNote = pickRandomPracticeNote(practiceTargetNote);
             setPracticeTargetNote(nextNote);
           }
           // 无论随机还是固定模式，都重置进度继续练习
@@ -387,7 +430,7 @@ const App: React.FC = () => {
         }, 1000);
       }
     }
-  }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote, practiceNotes, clearRandomSwitchTimeout]);
+  }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote, pickRandomPracticeNote, clearRandomSwitchTimeout]);
 
   const handlePracticeClick = (stringIndex: number, fret: number) => {
     const { note } = getNoteAtFret(stringIndex, fret);
@@ -634,15 +677,7 @@ const App: React.FC = () => {
                   {/* 半音开关 */}
                   <div className="flex items-center gap-2 mt-1">
                     <button
-                      onClick={() => {
-                        const next = !includeSharps;
-                        setIncludeSharps(next);
-                        // 关闭半音时，若当前选中的是半音，自动切回 C
-                        if (!next && practiceTargetNote.includes('#')) {
-                          setPracticeTargetNote('C');
-                        }
-                        resetPractice();
-                      }}
+                      onClick={handleIncludeSharpsToggle}
                       className={`relative w-11 h-6 rounded-full transition-colors duration-300 ${includeSharps ? 'bg-blue-500' : 'bg-neutral-700'}`}
                       aria-label="包含半音"
                     >
@@ -680,7 +715,7 @@ const App: React.FC = () => {
                   </h3>
                   <div className="flex flex-col gap-2">
                     <button
-                      onClick={() => { setRandomMode(!randomMode); resetPractice(); }}
+                      onClick={handleRandomModeToggle}
                       className={`h-11 rounded-xl border-2 font-bold flex items-center justify-center gap-2 text-xs transition-all
                         ${randomMode
                           ? 'bg-blue-600/20 border-blue-400 text-blue-400'
@@ -735,7 +770,7 @@ const App: React.FC = () => {
                         恢复默认
                       </button>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-[10px] text-neutral-400 font-bold">清晰度阈值</span>
@@ -755,7 +790,7 @@ const App: React.FC = () => {
                           <span className="text-[10px] text-white font-mono font-bold">{pitchConfig.rmsThreshold.toFixed(3)}</span>
                         </div>
                         <input
-                          type="range" min="0.001" max="0.05" step="0.001"
+                          type="range" min="0.001" max="0.02" step="0.001"
                           value={pitchConfig.rmsThreshold}
                           onChange={e => updatePitchConfig({ rmsThreshold: parseFloat(e.target.value) })}
                           className="w-full h-1.5 bg-neutral-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
@@ -774,6 +809,19 @@ const App: React.FC = () => {
                           className="w-full h-1.5 bg-neutral-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
                         />
                         <div className="flex justify-between text-[9px] text-neutral-600"><span>快速响应</span><span>防误触</span></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-neutral-400 font-bold">冷却时间</span>
+                          <span className="text-[10px] text-white font-mono font-bold">{(pitchConfig.cooldownMs / 1000).toFixed(1)}s</span>
+                        </div>
+                        <input
+                          type="range" min="500" max="3000" step="100"
+                          value={pitchConfig.cooldownMs}
+                          onChange={e => updatePitchConfig({ cooldownMs: parseInt(e.target.value) })}
+                          className="w-full h-1.5 bg-neutral-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[9px] text-neutral-600"><span>快速切换</span><span>等余音消散</span></div>
                       </div>
                     </div>
                   </div>

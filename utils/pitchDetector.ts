@@ -15,6 +15,7 @@ export interface PitchDetectorConfig {
   clarityThreshold: number;  // 0-1，越高越严格
   rmsThreshold: number;      // 0-0.1，音量门限
   stableFrames: number;      // 1-10，稳定帧数
+  cooldownMs: number;        // 正确触发后的冷却时间(毫秒)，防止吉他余音误触发下一个音
 }
 
 /** 默认参数 */
@@ -22,6 +23,7 @@ export const DEFAULT_PITCH_CONFIG: PitchDetectorConfig = {
   clarityThreshold: 0.85,
   rmsThreshold: 0.01,
   stableFrames: 3,
+  cooldownMs: 1500,
 };
 
 /** 从 localStorage 读取参数 */
@@ -64,6 +66,9 @@ export class PitchDetector {
   private lastDetectedMidi: number = -1;
   private stableCount: number = 0;
   private lastTriggeredMidi: number = -1;
+
+  // 冷却期：触发后一段时间内忽略检测，防止吉他余音误触发
+  private cooldownUntil: number = 0;
 
   // 回调
   public onNoteDetected: ((result: PitchResult) => void) | null = null;
@@ -111,6 +116,7 @@ export class PitchDetector {
       this.lastDetectedMidi = -1;
       this.stableCount = 0;
       this.lastTriggeredMidi = -1;
+      this.cooldownUntil = 0;
       this.onStatusChange?.('listening');
 
       // 启动检测循环
@@ -155,6 +161,8 @@ export class PitchDetector {
     this.lastTriggeredMidi = -1;
     this.lastDetectedMidi = -1;
     this.stableCount = 0;
+    // 重置时启动冷却期，防止旧音余音立刻触发新目标
+    this.cooldownUntil = performance.now() + this.config.cooldownMs;
   }
 
   /**
@@ -162,6 +170,14 @@ export class PitchDetector {
    */
   private detectLoop = (): void => {
     if (!this.running || !this.analyser || !this.detector || !this.inputBuffer) return;
+
+    // 冷却期内跳过所有检测，等待吉他余音消散
+    if (performance.now() < this.cooldownUntil) {
+      this.stableCount = 0;
+      this.lastDetectedMidi = -1;
+      this.rafId = requestAnimationFrame(this.detectLoop);
+      return;
+    }
 
     this.analyser.getFloatTimeDomainData(this.inputBuffer);
 
@@ -226,6 +242,8 @@ export class PitchDetector {
     // 连续检测到同一音符达到稳定帧数，且不是刚触发过的同一个音
     if (this.stableCount >= this.config.stableFrames && midiNote !== this.lastTriggeredMidi) {
       this.lastTriggeredMidi = midiNote;
+      // 触发后进入冷却期，防止吉他余音误触发下一个音
+      this.cooldownUntil = performance.now() + this.config.cooldownMs;
       this.onNoteDetected?.(result);
     }
   }
