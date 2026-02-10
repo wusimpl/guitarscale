@@ -6,7 +6,7 @@ import { ALL_NOTES, SCALE_PATTERNS, COMMON_CHORDS, getNoteAtFret, generateChordS
 import { NoteName, ScaleType, ChordShape, ChordCategory, PracticeResult, PracticeStatus, FretRange, ChordScaleQuestion } from './types';
 import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map, Zap, Shuffle, Timer, Check, X, ArrowRight, Volume2, VolumeX, Mic, MicOff } from 'lucide-react';
 import { playCorrectSound, playIncorrectSound, playSuccessSound, playChordSound, unlockAudio, isMuted, setMuted } from './utils/audioFeedback';
-import { PitchDetector, MicStatus, PitchResult } from './utils/pitchDetector';
+import { PitchDetector, MicStatus, PitchResult, PitchDetectorConfig, loadPitchConfig, savePitchConfig, DEFAULT_PITCH_CONFIG } from './utils/pitchDetector';
 
 type ViewMode = 'scale' | 'chord' | 'practice' | 'chordScale';
 
@@ -65,6 +65,8 @@ const App: React.FC = () => {
   const [micStatus, setMicStatus] = useState<MicStatus>('idle');
   const [detectedNote, setDetectedNote] = useState<{ note: NoteName; octave: number } | null>(null);
   const pitchDetectorRef = useRef<PitchDetector | null>(null);
+  const [pitchConfig, setPitchConfig] = useState<PitchDetectorConfig>(loadPitchConfig);
+  const [showMicSettings, setShowMicSettings] = useState<boolean>(false);
 
   // 根据 includeSharps 过滤可选音符
   const practiceNotes = useMemo(() => {
@@ -244,6 +246,18 @@ const App: React.FC = () => {
       pitchDetectorRef.current.onNoteDetected = handleMicNoteDetected;
     }
   }, [handleMicNoteDetected]);
+
+  // 参数变更时同步到 detector 并持久化
+  const updatePitchConfig = useCallback((partial: Partial<PitchDetectorConfig>) => {
+    setPitchConfig(prev => {
+      const next = { ...prev, ...partial };
+      savePitchConfig(next);
+      if (pitchDetectorRef.current) {
+        pitchDetectorRef.current.config = next;
+      }
+      return next;
+    });
+  }, []);
 
   // 离开练习模式时关闭收音
   useEffect(() => {
@@ -687,6 +701,18 @@ const App: React.FC = () => {
                       {micMode ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
                       {micStatus === 'error' ? '麦克风不可用' : micMode ? '收音模式 开' : '收音模式 关'}
                     </button>
+                    {micMode && (
+                      <button
+                        onClick={() => setShowMicSettings(!showMicSettings)}
+                        className={`h-11 rounded-xl border-2 font-bold flex items-center justify-center gap-2 text-xs transition-all
+                          ${showMicSettings
+                            ? 'bg-neutral-800 border-neutral-600 text-neutral-300'
+                            : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:border-neutral-700'}
+                        `}
+                      >
+                        <Settings size={14} /> 检测参数
+                      </button>
+                    )}
                     <button
                       onClick={resetPractice}
                       className="h-11 rounded-xl bg-neutral-800 border-2 border-neutral-700 text-neutral-400 font-bold flex items-center justify-center gap-2 hover:bg-red-900/20 hover:text-red-400 hover:border-red-900/30 transition-all text-xs"
@@ -696,6 +722,62 @@ const App: React.FC = () => {
                   </div>
                 </div>
                 </div>
+
+                {/* 收音检测参数设置面板 */}
+                {showMicSettings && micMode && (
+                  <div className="bg-neutral-900/70 border border-neutral-800/50 rounded-xl px-4 py-3 space-y-3 animate-in fade-in duration-300">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-emerald-400 font-bold uppercase tracking-widest">检测参数调节</span>
+                      <button
+                        onClick={() => { updatePitchConfig(DEFAULT_PITCH_CONFIG); }}
+                        className="text-[10px] text-neutral-500 hover:text-neutral-300 font-bold"
+                      >
+                        恢复默认
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-neutral-400 font-bold">清晰度阈值</span>
+                          <span className="text-[10px] text-white font-mono font-bold">{pitchConfig.clarityThreshold.toFixed(2)}</span>
+                        </div>
+                        <input
+                          type="range" min="0.5" max="0.98" step="0.01"
+                          value={pitchConfig.clarityThreshold}
+                          onChange={e => updatePitchConfig({ clarityThreshold: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-neutral-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[9px] text-neutral-600"><span>灵敏</span><span>严格</span></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-neutral-400 font-bold">音量门限</span>
+                          <span className="text-[10px] text-white font-mono font-bold">{pitchConfig.rmsThreshold.toFixed(3)}</span>
+                        </div>
+                        <input
+                          type="range" min="0.001" max="0.05" step="0.001"
+                          value={pitchConfig.rmsThreshold}
+                          onChange={e => updatePitchConfig({ rmsThreshold: parseFloat(e.target.value) })}
+                          className="w-full h-1.5 bg-neutral-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[9px] text-neutral-600"><span>灵敏</span><span>过滤杂音</span></div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] text-neutral-400 font-bold">稳定帧数</span>
+                          <span className="text-[10px] text-white font-mono font-bold">{pitchConfig.stableFrames}</span>
+                        </div>
+                        <input
+                          type="range" min="1" max="10" step="1"
+                          value={pitchConfig.stableFrames}
+                          onChange={e => updatePitchConfig({ stableFrames: parseInt(e.target.value) })}
+                          className="w-full h-1.5 bg-neutral-700 rounded-full appearance-none cursor-pointer accent-emerald-500"
+                        />
+                        <div className="flex justify-between text-[9px] text-neutral-600"><span>快速响应</span><span>防误触</span></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* 计时/计分面板 */}
                 <div className="flex flex-wrap items-center gap-4 sm:gap-8 bg-neutral-900/50 border border-neutral-800/50 rounded-xl px-4 py-3">

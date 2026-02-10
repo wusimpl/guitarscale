@@ -10,7 +10,33 @@ import { PitchDetector as PitchyDetector } from 'pitchy';
 
 const ALL_NOTES: NoteName[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-/** 检测结果 */
+/** 检测参数配置 */
+export interface PitchDetectorConfig {
+  clarityThreshold: number;  // 0-1，越高越严格
+  rmsThreshold: number;      // 0-0.1，音量门限
+  stableFrames: number;      // 1-10，稳定帧数
+}
+
+/** 默认参数 */
+export const DEFAULT_PITCH_CONFIG: PitchDetectorConfig = {
+  clarityThreshold: 0.85,
+  rmsThreshold: 0.01,
+  stableFrames: 3,
+};
+
+/** 从 localStorage 读取参数 */
+export const loadPitchConfig = (): PitchDetectorConfig => {
+  try {
+    const saved = localStorage.getItem('stringglow_pitch_config');
+    if (saved) return { ...DEFAULT_PITCH_CONFIG, ...JSON.parse(saved) };
+  } catch {}
+  return { ...DEFAULT_PITCH_CONFIG };
+};
+
+/** 保存参数到 localStorage */
+export const savePitchConfig = (config: PitchDetectorConfig): void => {
+  localStorage.setItem('stringglow_pitch_config', JSON.stringify(config));
+};
 export interface PitchResult {
   note: NoteName;    // 音名
   octave: number;    // 八度
@@ -43,13 +69,17 @@ export class PitchDetector {
   public onNoteDetected: ((result: PitchResult) => void) | null = null;
   public onStatusChange: ((status: MicStatus) => void) | null = null;
 
-  // 参数
+  // 可调参数
+  public config: PitchDetectorConfig;
+
+  // 固定参数
   private readonly FFT_SIZE = 4096;
-  private readonly CLARITY_THRESHOLD = 0.90;  // pitchy clarity 阈值，过滤泛音/杂音
-  private readonly RMS_THRESHOLD = 0.01;      // 音量门限，低于此值的微弱信号直接忽略
-  private readonly STABLE_FRAMES = 5;         // 稳定帧数，连续5帧同一音符才触发
-  private readonly MIN_FREQ = 75;             // 最低检测频率 (Hz)
-  private readonly MAX_FREQ = 1200;           // 最高检测频率 (Hz)
+  private readonly MIN_FREQ = 75;
+  private readonly MAX_FREQ = 1200;
+
+  constructor(config?: Partial<PitchDetectorConfig>) {
+    this.config = { ...loadPitchConfig(), ...config };
+  }
 
   /**
    * 启动音高检测（接收外部已获取的 MediaStream）
@@ -142,7 +172,7 @@ export class PitchDetector {
     }
     const rms = Math.sqrt(sum / this.inputBuffer.length);
 
-    if (rms < this.RMS_THRESHOLD) {
+    if (rms < this.config.rmsThreshold) {
       this.stableCount = 0;
       this.lastDetectedMidi = -1;
       this.rafId = requestAnimationFrame(this.detectLoop);
@@ -152,7 +182,7 @@ export class PitchDetector {
     const [pitch, clarity] = this.detector.findPitch(this.inputBuffer, getAudioCtx().sampleRate);
 
     // clarity 足够高且频率在吉他范围内
-    if (clarity >= this.CLARITY_THRESHOLD && pitch >= this.MIN_FREQ && pitch <= this.MAX_FREQ) {
+    if (clarity >= this.config.clarityThreshold && pitch >= this.MIN_FREQ && pitch <= this.MAX_FREQ) {
       const result = this.frequencyToNote(pitch, clarity);
       this.handleDetection(result);
     } else {
@@ -194,7 +224,7 @@ export class PitchDetector {
     }
 
     // 连续检测到同一音符达到稳定帧数，且不是刚触发过的同一个音
-    if (this.stableCount >= this.STABLE_FRAMES && midiNote !== this.lastTriggeredMidi) {
+    if (this.stableCount >= this.config.stableFrames && midiNote !== this.lastTriggeredMidi) {
       this.lastTriggeredMidi = midiNote;
       this.onNoteDetected?.(result);
     }
