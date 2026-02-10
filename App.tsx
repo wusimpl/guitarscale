@@ -5,7 +5,7 @@ import AITutor from './components/AITutor';
 import { ALL_NOTES, SCALE_PATTERNS, COMMON_CHORDS, getNoteAtFret, generateChordScaleQuestion, getScaleNotesFromIntervals } from './utils/musicTheory';
 import { NoteName, ScaleType, ChordShape, ChordCategory, PracticeResult, PracticeStatus, FretRange, ChordScaleQuestion } from './types';
 import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map, Zap, Shuffle, Timer, Check, X, ArrowRight } from 'lucide-react';
-import { playCorrectSound, playIncorrectSound, playSuccessSound, playChordSound } from './utils/audioFeedback';
+import { playCorrectSound, playIncorrectSound, playSuccessSound, playChordSound, unlockAudio } from './utils/audioFeedback';
 
 type ViewMode = 'scale' | 'chord' | 'practice' | 'chordScale';
 
@@ -19,6 +19,22 @@ const FRET_RANGE_PRESETS: FretRange[] = [
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('scale');
+
+  // 移动端音频解锁：首次用户交互时解锁 AudioContext
+  useEffect(() => {
+    const handleFirstInteraction = () => {
+      unlockAudio();
+      // 解锁后移除监听器
+      document.removeEventListener('touchstart', handleFirstInteraction);
+      document.removeEventListener('click', handleFirstInteraction);
+    };
+    document.addEventListener('touchstart', handleFirstInteraction, { once: true });
+    document.addEventListener('click', handleFirstInteraction, { once: true });
+    return () => {
+      document.removeEventListener('touchstart', handleFirstInteraction);
+      document.removeEventListener('click', handleFirstInteraction);
+    };
+  }, []);
   
   // Scale State
   const [rootNote, setRootNote] = useState<NoteName>('C');
@@ -187,18 +203,19 @@ const App: React.FC = () => {
       if (foundCount === totalNotesInCurrentRange) {
         playSuccessSound();
         setPracticeTimerRunning(false);
-        // 随机模式：完成后自动切换下一个音
-        if (randomMode) {
-          clearRandomSwitchTimeout();
-          randomSwitchTimeoutRef.current = window.setTimeout(() => {
+        clearRandomSwitchTimeout();
+        randomSwitchTimeoutRef.current = window.setTimeout(() => {
+          if (randomMode) {
+            // 随机模式：完成后自动切换下一个音
             const otherNotes = practiceNotes.filter(n => n !== practiceTargetNote);
             const nextNote = otherNotes[Math.floor(Math.random() * otherNotes.length)];
             setPracticeTargetNote(nextNote);
-            setPracticeResults({});
-            setPracticeTimerRunning(true);
-            randomSwitchTimeoutRef.current = null;
-          }, 1500);
-        }
+          }
+          // 无论随机还是固定模式，都重置进度继续练习
+          setPracticeResults({});
+          setPracticeTimerRunning(true);
+          randomSwitchTimeoutRef.current = null;
+        }, 1000);
       }
     }
   }, [practiceResults, totalNotesInCurrentRange, viewMode, randomMode, practiceTargetNote, practiceNotes, clearRandomSwitchTimeout]);

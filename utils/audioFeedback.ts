@@ -5,16 +5,48 @@
  */
 
 let audioCtx: AudioContext | null = null;
+let isAudioUnlocked = false;
 
+/**
+ * 获取或创建 AudioContext
+ * 注意：iOS 上必须在用户交互后才能正常播放
+ */
 const getAudioCtx = () => {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-  }
-  // 浏览器安全策略：用户交互后恢复挂起的 AudioContext
-  if (audioCtx.state === 'suspended') {
-    audioCtx.resume();
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    audioCtx = new AudioContextClass();
   }
   return audioCtx;
+};
+
+/**
+ * 解锁移动端音频 - 必须在用户交互事件中同步调用
+ * iOS Safari 要求：
+ * 1. AudioContext 必须在用户交互中创建或恢复
+ * 2. 必须播放一个实际的音频节点（不能是空 buffer）
+ */
+export const unlockAudio = () => {
+  if (isAudioUnlocked) return;
+
+  const ctx = getAudioCtx();
+
+  // iOS 需要在用户交互中恢复 suspended 状态的 AudioContext
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+
+  // 播放一个极短的静音振荡器来解锁音频
+  // 使用 OscillatorNode 比空 buffer 更可靠
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.001; // 几乎静音
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  osc.start(0);
+  osc.stop(ctx.currentTime + 0.001);
+
+  isAudioUnlocked = true;
+  console.log('[音频] iOS 音频已解锁, AudioContext state:', ctx.state);
 };
 
 /**
@@ -50,6 +82,12 @@ const GUITAR_ENVELOPE = {
  */
 const playGuitarNote = (frequency: number, volume: number = 0.18, startTime?: number) => {
   const ctx = getAudioCtx();
+
+  // 确保 AudioContext 处于运行状态
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+
   const now = startTime ?? ctx.currentTime;
   const { attack, decay, sustain, release } = GUITAR_ENVELOPE;
   const totalDuration = attack + decay + release + 0.1;
