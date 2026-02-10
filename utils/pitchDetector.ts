@@ -1,11 +1,12 @@
 
 /**
- * 吉他音高检测引擎 - 基于 Web Audio API + Autocorrelation 算法
+ * 吉他音高检测引擎 - 基于 pitchy (McLeod Pitch Method)
  * 通过麦克风收音，实时检测吉他弹奏的单音音高
  */
 
 import { NoteName } from '../types';
 import { getAudioCtx } from './audioFeedback';
+import { PitchDetector as PitchyDetector } from 'pitchy';
 
 const ALL_NOTES: NoteName[] = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
@@ -22,7 +23,7 @@ export type MicStatus = 'idle' | 'listening' | 'error';
 
 /**
  * 音高检测器
- * 使用 Autocorrelation（自相关）算法从麦克风音频流中提取基频
+ * 使用 pitchy 库（McLeod Pitch Method）从麦克风音频流中提取基频
  */
 export class PitchDetector {
   private analyser: AnalyserNode | null = null;
@@ -30,6 +31,8 @@ export class PitchDetector {
   private sourceNode: MediaStreamAudioSourceNode | null = null;
   private rafId: number | null = null;
   private running = false;
+  private detector: PitchyDetector<Float32Array> | null = null;
+  private inputBuffer: Float32Array | null = null;
 
   // 稳定性检测：连续多帧检测到同一音符才触发
   private lastDetectedMidi: number = -1;
@@ -42,11 +45,10 @@ export class PitchDetector {
 
   // 参数
   private readonly FFT_SIZE = 4096;
-  private readonly RMS_THRESHOLD = 0.015;    // 噪音门限
-  private readonly STABLE_FRAMES = 3;        // 稳定帧数
-  private readonly MIN_FREQ = 75;            // 最低检测频率 (Hz)，覆盖 E2≈82Hz，留余量
-  private readonly MAX_FREQ = 1200;          // 最高检测频率 (Hz)，覆盖 12 品 E5
-  private readonly CONFIDENCE_THRESHOLD = 0.9; // 自相关置信度阈值
+  private readonly CLARITY_THRESHOLD = 0.85;  // pitchy clarity 阈值
+  private readonly STABLE_FRAMES = 3;         // 稳定帧数
+  private readonly MIN_FREQ = 75;             // 最低检测频率 (Hz)
+  private readonly MAX_FREQ = 1200;           // 最高检测频率 (Hz)
 
   /**
    * 启动音高检测（接收外部已获取的 MediaStream）
@@ -70,6 +72,10 @@ export class PitchDetector {
       this.sourceNode = ctx.createMediaStreamSource(this.mediaStream);
       this.sourceNode.connect(this.analyser);
 
+      // 创建 pitchy 检测器
+      this.detector = PitchyDetector.forFloat32Array(this.analyser.fftSize);
+      this.inputBuffer = new Float32Array(this.analyser.fftSize);
+
       this.running = true;
       this.lastDetectedMidi = -1;
       this.stableCount = 0;
@@ -80,49 +86,6 @@ export class PitchDetector {
       this.detectLoop();
     } catch (err) {
       console.error('[音高检测] 启动失败:', err);
-      this.onStatusChange?.('error');
-    }
-  }
-
-  /**
-   * 启动麦克风收音和音高检测（内部请求权限，桌面端使用）
-   */
-  async start(): Promise<void> {
-    if (this.running) return;
-
-    try {
-      // 请求麦克风权限
-      this.mediaStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        }
-      });
-
-      const ctx = getAudioCtx();
-      if (ctx.state === 'suspended') {
-        await ctx.resume();
-      }
-
-      // 创建音频分析节点
-      this.analyser = ctx.createAnalyser();
-      this.analyser.fftSize = this.FFT_SIZE;
-
-      // 连接麦克风到分析器（不连接到 destination，避免回放）
-      this.sourceNode = ctx.createMediaStreamSource(this.mediaStream);
-      this.sourceNode.connect(this.analyser);
-
-      this.running = true;
-      this.lastDetectedMidi = -1;
-      this.stableCount = 0;
-      this.lastTriggeredMidi = -1;
-      this.onStatusChange?.('listening');
-
-      // 启动检测循环
-      this.detectLoop();
-    } catch (err) {
-      console.error('[音高检测] 麦克风启动失败:', err);
       this.onStatusChange?.('error');
     }
   }
@@ -149,6 +112,8 @@ export class PitchDetector {
     }
 
     this.analyser = null;
+    this.detector = null;
+    this.inputBuffer = null;
     this.onStatusChange?.('idle');
   }
 
@@ -165,22 +130,18 @@ export class PitchDetector {
    * 检测循环 - 每帧分析音频数据
    */
   private detectLoop = (): void => {
-    if (!this.running || !this.analyser) return;
+    if (!this.running || !this.analyser || !this.detector || !this.inputBuffer) return;
 
-    const bufferLength = this.analyser.fftSize;
-    const buffer = new Float32Array(bufferLength);
-    this.analyser.getFloatTimeDomainData(buffer);
+    this.analyser.getFloatTimeDomainData(this.inputBuffer);
 
-    // 计算 RMS（均方根），判断是否有足够音量
-    const rms = this.calculateRMS(buffer);
+    const [pitch, clarity] = this.detector.findPitch(this.inputBuffer, getAudioCtx().sampleRate);
 
-    if (rms > this.RMS_THRESHOLD) {
-      const result = this.detectPitch(buffer, getAudioCtx().sampleRate);
-      if (result) {
-        this.handleDetection(result);
-      }
+    // clarity 足够高且频率在吉他范围内
+    if (clarity >= this.CLARITY_THRESHOLD && pitch >= this.MIN_FREQ && pitch <= this.MAX_FREQ) {
+      const result = this.frequencyToNote(pitch, clarity);
+      this.handleDetection(result);
     } else {
-      // 静音时重置稳定计数
+      // 无效检测时重置稳定计数
       this.stableCount = 0;
       this.lastDetectedMidi = -1;
     }
@@ -189,66 +150,9 @@ export class PitchDetector {
   };
 
   /**
-   * 计算音频信号的 RMS（均方根）
+   * 频率转音符
    */
-  private calculateRMS(buffer: Float32Array): number {
-    let sum = 0;
-    for (let i = 0; i < buffer.length; i++) {
-      sum += buffer[i] * buffer[i];
-    }
-    return Math.sqrt(sum / buffer.length);
-  }
-
-  /**
-   * Autocorrelation 音高检测算法
-   * 通过自相关函数找到信号的基本周期，从而确定基频
-   */
-  private detectPitch(buffer: Float32Array, sampleRate: number): PitchResult | null {
-    const n = buffer.length;
-
-    // 根据频率范围计算搜索的周期范围（以采样点为单位）
-    const minPeriod = Math.floor(sampleRate / this.MAX_FREQ);
-    const maxPeriod = Math.floor(sampleRate / this.MIN_FREQ);
-
-    // 计算归一化自相关函数
-    let bestCorrelation = 0;
-    let bestPeriod = 0;
-
-    for (let period = minPeriod; period <= maxPeriod && period < n; period++) {
-      let correlation = 0;
-      let norm1 = 0;
-      let norm2 = 0;
-
-      // 使用信号的前半部分计算，避免边界效应
-      const len = Math.min(n - period, n / 2);
-      for (let i = 0; i < len; i++) {
-        correlation += buffer[i] * buffer[i + period];
-        norm1 += buffer[i] * buffer[i];
-        norm2 += buffer[i + period] * buffer[i + period];
-      }
-
-      // 归一化
-      const normFactor = Math.sqrt(norm1 * norm2);
-      if (normFactor > 0) {
-        correlation /= normFactor;
-      }
-
-      if (correlation > bestCorrelation) {
-        bestCorrelation = correlation;
-        bestPeriod = period;
-      }
-    }
-
-    // 置信度不够，丢弃
-    if (bestCorrelation < this.CONFIDENCE_THRESHOLD || bestPeriod === 0) {
-      return null;
-    }
-
-    // 抛物线插值，提高频率精度
-    const refinedPeriod = this.parabolicInterpolation(buffer, bestPeriod, sampleRate);
-    const frequency = sampleRate / refinedPeriod;
-
-    // 频率转 MIDI 音符号
+  private frequencyToNote(frequency: number, confidence: number): PitchResult {
     const midiNote = Math.round(12 * Math.log2(frequency / 440) + 69);
     const noteIndex = ((midiNote % 12) + 12) % 12;
     const octave = Math.floor(midiNote / 12) - 1;
@@ -257,37 +161,8 @@ export class PitchDetector {
       note: ALL_NOTES[noteIndex],
       octave,
       frequency,
-      confidence: bestCorrelation,
+      confidence,
     };
-  }
-
-  /**
-   * 抛物线插值 - 在自相关峰值附近做二次插值，提高周期估计精度
-   */
-  private parabolicInterpolation(buffer: Float32Array, period: number, sampleRate: number): number {
-    const n = buffer.length;
-    if (period <= 1 || period >= n - 1) return period;
-
-    // 计算 period-1, period, period+1 三个点的自相关值
-    const calcCorr = (p: number): number => {
-      let corr = 0;
-      const len = Math.min(n - p, n / 2);
-      for (let i = 0; i < len; i++) {
-        corr += buffer[i] * buffer[i + p];
-      }
-      return corr;
-    };
-
-    const y0 = calcCorr(period - 1);
-    const y1 = calcCorr(period);
-    const y2 = calcCorr(period + 1);
-
-    // 抛物线顶点偏移
-    const denominator = 2 * (2 * y1 - y0 - y2);
-    if (Math.abs(denominator) < 1e-10) return period;
-
-    const shift = (y0 - y2) / denominator;
-    return period + shift;
   }
 
   /**
