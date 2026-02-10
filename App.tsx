@@ -201,9 +201,10 @@ const App: React.FC = () => {
     if (viewMode === 'practice' && totalNotesInCurrentRange > 0) {
       const foundCount = Object.values(practiceResults).filter(v => v === 'correct').length;
       if (foundCount === totalNotesInCurrentRange) {
-        playSuccessSound();
         setPracticeTimerRunning(false);
         clearRandomSwitchTimeout();
+        // 延迟播放完成音，避免和最后一个正确音重叠
+        setTimeout(() => playSuccessSound(), 600);
         randomSwitchTimeoutRef.current = window.setTimeout(() => {
           if (randomMode) {
             // 随机模式：完成后自动切换下一个音

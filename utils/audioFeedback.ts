@@ -80,7 +80,7 @@ const GUITAR_ENVELOPE = {
  * @param volume 音量（0-1）
  * @param startTime 开始时间（AudioContext时间），默认立即播放
  */
-const playGuitarNote = (frequency: number, volume: number = 0.18, startTime?: number) => {
+const playGuitarNote = (frequency: number, volume: number = 0.18, startTime?: number, envelopeOverride?: typeof GUITAR_ENVELOPE) => {
   const ctx = getAudioCtx();
 
   // 确保 AudioContext 处于运行状态
@@ -89,7 +89,7 @@ const playGuitarNote = (frequency: number, volume: number = 0.18, startTime?: nu
   }
 
   const now = startTime ?? ctx.currentTime;
-  const { attack, decay, sustain, release } = GUITAR_ENVELOPE;
+  const { attack, decay, sustain, release } = envelopeOverride ?? GUITAR_ENVELOPE;
   const totalDuration = attack + decay + release + 0.1;
 
   // 主增益节点 - 控制总音量
@@ -213,8 +213,15 @@ export const playChordSound = (
 // === 练习模式音效（保留简洁的反馈音） ===
 
 export const playCorrectSound = (stringIndex: number, fret: number) => {
-  // 正确时播放该音符的真实吉他音色
-  playNoteSound(stringIndex, fret);
+  // 正确时播放该音符的吉他音色，使用更长的包络让音符更饱满
+  const freq = getMidiFrequency(stringIndex, fret);
+  const volume = stringIndex >= 4 ? 0.14 : 0.18;
+  playGuitarNote(freq, volume, undefined, {
+    attack: 0.005,
+    decay: 0.2,
+    sustain: 0.5,
+    release: 2.0,
+  });
 };
 
 export const playIncorrectSound = () => {

@@ -1,20 +1,44 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# 弦萤 StringGlow
 
-# Run and deploy your AI Studio app
+吉他指板可视化与练习工具，帮助吉他新手快速熟悉指板上的音符、音阶和和弦。
 
-This contains everything you need to run your app locally.
+## 功能
 
-View your app in AI Studio: https://ai.studio/apps/drive/1dvXmf5CZ18odzqGi5dZuyK_AMjumHTqH
+### 音阶图
+选择任意主音和调式，在指板上高亮显示对应音阶的所有音符位置。支持切换音名/级数显示，点击音符可查看科学音高、频率、音程关系等详细信息，并播放对应音高。
 
-## Run Locally
+### 和弦库
+内置大量常用和弦指法图，按类别（大三、小三、七和弦等）筛选，按使用频率排序。选中和弦后指板自动显示指法位置，支持扫弦试听。
 
-**Prerequisites:**  Node.js
+### 位置练习
+指定一个目标音符和品格范围，在指板上找出所有该音符的位置。支持：
+- 自定义品格范围（开放区、中低区、中高区、高把位、全指板）
+- 随机模式（完成后自动切换下一个音符）
+- 半音开关（是否包含升号音符）
+- 计时计分
 
+### 和弦配阶
+随机出题，给定一个和弦，从四个选项中选出最匹配的音阶。选择后指板高亮显示正确答案对应的音阶，帮助理解和弦与音阶的对应关系。
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+### AI 乐理助教
+基于 Google Gemini 的对话式乐理问答（需配置 API Key 并开启环境变量）。
+
+## 本地运行
+
+需要 Node.js 环境。
+
+```
+npm install
+npm run dev
+```
+
+如需启用 AI 助教功能，在 `.env.local` 中设置：
+
+```
+GEMINI_API_KEY=你的密钥
+SHOW_AI_TUTOR=true
+```
+
+## 技术栈
+
+React + TypeScript + Vite + Tailwind CSS
