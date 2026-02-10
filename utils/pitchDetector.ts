@@ -45,8 +45,9 @@ export class PitchDetector {
 
   // 参数
   private readonly FFT_SIZE = 4096;
-  private readonly CLARITY_THRESHOLD = 0.85;  // pitchy clarity 阈值
-  private readonly STABLE_FRAMES = 3;         // 稳定帧数
+  private readonly CLARITY_THRESHOLD = 0.90;  // pitchy clarity 阈值，过滤泛音/杂音
+  private readonly RMS_THRESHOLD = 0.01;      // 音量门限，低于此值的微弱信号直接忽略
+  private readonly STABLE_FRAMES = 5;         // 稳定帧数，连续5帧同一音符才触发
   private readonly MIN_FREQ = 75;             // 最低检测频率 (Hz)
   private readonly MAX_FREQ = 1200;           // 最高检测频率 (Hz)
 
@@ -133,6 +134,20 @@ export class PitchDetector {
     if (!this.running || !this.analyser || !this.detector || !this.inputBuffer) return;
 
     this.analyser.getFloatTimeDomainData(this.inputBuffer);
+
+    // RMS 音量门限：微弱信号直接跳过
+    let sum = 0;
+    for (let i = 0; i < this.inputBuffer.length; i++) {
+      sum += this.inputBuffer[i] * this.inputBuffer[i];
+    }
+    const rms = Math.sqrt(sum / this.inputBuffer.length);
+
+    if (rms < this.RMS_THRESHOLD) {
+      this.stableCount = 0;
+      this.lastDetectedMidi = -1;
+      this.rafId = requestAnimationFrame(this.detectLoop);
+      return;
+    }
 
     const [pitch, clarity] = this.detector.findPitch(this.inputBuffer, getAudioCtx().sampleRate);
 
