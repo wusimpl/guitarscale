@@ -4,8 +4,8 @@ import Fretboard from './components/Fretboard';
 import AITutor from './components/AITutor';
 import { ALL_NOTES, SCALE_PATTERNS, COMMON_CHORDS, getNoteAtFret, generateChordScaleQuestion, getScaleNotesFromIntervals } from './utils/musicTheory';
 import { NoteName, ScaleType, ChordShape, ChordCategory, PracticeResult, PracticeStatus, FretRange, ChordScaleQuestion } from './types';
-import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map, Zap, Shuffle, Timer, Check, X, ArrowRight } from 'lucide-react';
-import { playCorrectSound, playIncorrectSound, playSuccessSound, playChordSound, unlockAudio } from './utils/audioFeedback';
+import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map, Zap, Shuffle, Timer, Check, X, ArrowRight, Volume2, VolumeX } from 'lucide-react';
+import { playCorrectSound, playIncorrectSound, playSuccessSound, playChordSound, unlockAudio, isMuted, setMuted } from './utils/audioFeedback';
 
 type ViewMode = 'scale' | 'chord' | 'practice' | 'chordScale';
 
@@ -19,6 +19,13 @@ const FRET_RANGE_PRESETS: FretRange[] = [
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('scale');
+  const [muted, setMutedState] = useState<boolean>(isMuted());
+
+  const toggleMute = () => {
+    const next = !muted;
+    setMutedState(next);
+    setMuted(next);
+  };
 
   // 移动端音频解锁：首次用户交互时解锁 AudioContext
   useEffect(() => {
@@ -272,7 +279,8 @@ const App: React.FC = () => {
              </div>
           </div>
 
-          <div className="flex bg-neutral-900 p-1 sm:p-1.5 rounded-2xl border border-neutral-800 shadow-inner w-full md:w-auto">
+          <div className="flex items-center gap-2 sm:gap-3 w-full md:w-auto">
+          <div className="flex bg-neutral-900 p-1 sm:p-1.5 rounded-2xl border border-neutral-800 shadow-inner flex-1 md:flex-none">
              <button
                 onClick={() => setViewMode('scale')}
                 className={`flex items-center justify-center gap-1.5 sm:gap-2.5 flex-1 md:flex-none px-3 sm:px-6 py-2 rounded-xl text-sm font-bold transition-all duration-300 ${viewMode === 'scale' ? 'bg-gradient-to-br from-neutral-700 to-neutral-800 text-white shadow-xl ring-1 ring-neutral-600' : 'text-neutral-500 hover:text-neutral-300'}`}
@@ -297,6 +305,14 @@ const App: React.FC = () => {
              >
                 <Zap size={18} /> <span className="hidden sm:inline">和弦配阶</span><span className="sm:hidden">配阶</span>
              </button>
+          </div>
+          <button
+            onClick={toggleMute}
+            className={`p-2.5 rounded-xl border-2 transition-all ${muted ? 'bg-neutral-900 border-neutral-700 text-neutral-500 hover:text-neutral-300' : 'bg-neutral-900 border-amber-500/50 text-amber-500'}`}
+            title={muted ? '开启声音' : '关闭声音'}
+          >
+            {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+          </button>
           </div>
         </div>
       </header>

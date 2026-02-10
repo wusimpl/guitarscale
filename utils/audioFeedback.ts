@@ -7,6 +7,16 @@
 let audioCtx: AudioContext | null = null;
 let isAudioUnlocked = false;
 
+// 全局静音开关，从 localStorage 读取
+let _muted: boolean = localStorage.getItem('stringglow_muted') === 'true';
+
+export const isMuted = () => _muted;
+
+export const setMuted = (muted: boolean) => {
+  _muted = muted;
+  localStorage.setItem('stringglow_muted', String(muted));
+};
+
 /**
  * 获取或创建 AudioContext
  * 注意：iOS 上必须在用户交互后才能正常播放
@@ -69,9 +79,9 @@ const GUITAR_HARMONICS: [number, number][] = [
  */
 const GUITAR_ENVELOPE = {
   attack: 0.005,    // 起音时间（秒）- 拨弦瞬间
-  decay: 0.15,      // 衰减时间（秒）- 从峰值到持续电平
-  sustain: 0.3,     // 持续电平（相对峰值的比例）
-  release: 1.2,     // 释放时间（秒）- 音符自然消亡
+  decay: 0.25,      // 衰减时间（秒）- 从峰值到持续电平
+  sustain: 0.45,    // 持续电平（相对峰值的比例）
+  release: 2.5,     // 释放时间（秒）- 音符自然消亡
 };
 
 /**
@@ -81,6 +91,7 @@ const GUITAR_ENVELOPE = {
  * @param startTime 开始时间（AudioContext时间），默认立即播放
  */
 const playGuitarNote = (frequency: number, volume: number = 0.18, startTime?: number, envelopeOverride?: typeof GUITAR_ENVELOPE) => {
+  if (_muted) return;
   const ctx = getAudioCtx();
 
   // 确保 AudioContext 处于运行状态
@@ -203,10 +214,17 @@ export const playChordSound = (
   // 按弦号从高到低排序（低音弦先响），模拟下扫弦
   const sorted = [...notes].sort((a, b) => b.stringIndex - a.stringIndex);
 
+  const chordEnvelope = {
+    attack: 0.005,
+    decay: 0.3,
+    sustain: 0.5,
+    release: 3.0,
+  };
+
   sorted.forEach((note, i) => {
     const freq = getMidiFrequency(note.stringIndex, note.fret);
     const volume = note.stringIndex >= 4 ? 0.10 : 0.13;
-    playGuitarNote(freq, volume, now + i * strumSpeed);
+    playGuitarNote(freq, volume, now + i * strumSpeed, chordEnvelope);
   });
 };
 
@@ -218,13 +236,14 @@ export const playCorrectSound = (stringIndex: number, fret: number) => {
   const volume = stringIndex >= 4 ? 0.14 : 0.18;
   playGuitarNote(freq, volume, undefined, {
     attack: 0.005,
-    decay: 0.2,
-    sustain: 0.5,
-    release: 2.0,
+    decay: 0.3,
+    sustain: 0.55,
+    release: 3.0,
   });
 };
 
 export const playIncorrectSound = () => {
+  if (_muted) return;
   const ctx = getAudioCtx();
   const now = ctx.currentTime;
   // 错误反馈：短促的低沉闷响
