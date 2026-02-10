@@ -2,7 +2,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { NoteName, ScaleType, FretboardNote, ChordShape, PracticeResult, PracticeStatus, FretRange } from '../types';
 import { getNoteAtFret, getScaleNotes, getIntervalName, getFrequency, getScientificPitch, getFullIntervalName, getChordNotes } from '../utils/musicTheory';
-import { Activity, Info } from 'lucide-react';
+import { Activity, Info, Mic } from 'lucide-react';
 import { playNoteSound, playChordSound } from '../utils/audioFeedback';
 
 interface FretboardProps {
@@ -15,6 +15,8 @@ interface FretboardProps {
   practiceResults?: PracticeResult;
   practiceFretRange?: FretRange;
   onPracticeClick?: (stringIndex: number, fret: number) => void;
+  micMode?: boolean;
+  detectedNote?: { note: NoteName; octave: number } | null;
   customScaleNotes?: NoteName[];
 }
 
@@ -24,6 +26,7 @@ const FRETS = 12;
 const Fretboard: React.FC<FretboardProps> = ({
   rootNote, scaleType, showIntervals, activeChord,
   practiceMode, practiceTargetNote, practiceResults = {}, practiceFretRange, onPracticeClick,
+  micMode, detectedNote,
   customScaleNotes
 }) => {
   const [selectedNote, setSelectedNote] = useState<FretboardNote | null>(null);
@@ -111,7 +114,19 @@ const Fretboard: React.FC<FretboardProps> = ({
                       {practiceTargetNote}
                    </div>
                    <div className="flex flex-col">
-                     <span className="text-white text-xs sm:text-sm font-bold">找到所有 {practiceTargetNote}</span>
+                     <span className="text-white text-xs sm:text-sm font-bold">
+                       {micMode ? '弹奏吉他，自动识别' : `找到所有 ${practiceTargetNote}`}
+                     </span>
+                     {micMode && detectedNote && (
+                       <span className={`text-xs font-bold mt-0.5 ${detectedNote.note === practiceTargetNote ? 'text-emerald-400' : 'text-red-400'}`}>
+                         检测到: {detectedNote.note}{detectedNote.octave}
+                       </span>
+                     )}
+                     {micMode && !detectedNote && (
+                       <span className="text-xs text-neutral-500 font-bold mt-0.5 flex items-center gap-1">
+                         <Mic size={10} className="animate-pulse" /> 正在听...
+                       </span>
+                     )}
                    </div>
                 </div>
               </div>
@@ -326,16 +341,17 @@ const Fretboard: React.FC<FretboardProps> = ({
                                 if (!note) return null;
                                 const isOutOfPracticeRange = practiceMode && practiceFretRange && (0 < practiceFretRange.start || 0 > practiceFretRange.end);
 
-                                return <NoteCircle 
-                                  note={note} 
-                                  showInterval={showIntervals} 
-                                  isChordMode={!!activeChord} 
-                                  onSelect={setSelectedNote} 
-                                  isNut 
+                                return <NoteCircle
+                                  note={note}
+                                  showInterval={showIntervals}
+                                  isChordMode={!!activeChord}
+                                  onSelect={setSelectedNote}
+                                  isNut
                                   practiceMode={practiceMode}
                                   practiceStatus={practiceResults[`${sIndex}-0`]}
                                   isOutOfRange={isOutOfPracticeRange}
                                   onPracticeClick={() => onPracticeClick?.(sIndex, 0)}
+                                  micMode={micMode}
                                 />;
                             })()}
                         </div>
@@ -348,15 +364,16 @@ const Fretboard: React.FC<FretboardProps> = ({
                         return (
                             <div key={`fret-cell-${sIndex}-${fretNum}`} className="flex-1 flex justify-center items-center relative">
                                 {note && (
-                                    <NoteCircle 
-                                        note={note} 
-                                        showInterval={showIntervals} 
+                                    <NoteCircle
+                                        note={note}
+                                        showInterval={showIntervals}
                                         isChordMode={!!activeChord}
-                                        onSelect={setSelectedNote} 
+                                        onSelect={setSelectedNote}
                                         practiceMode={practiceMode}
                                         practiceStatus={practiceResults[`${sIndex}-${fretNum}`]}
                                         isOutOfRange={isOutOfPracticeRange}
                                         onPracticeClick={() => onPracticeClick?.(sIndex, fretNum)}
+                                        micMode={micMode}
                                     />
                                 )}
                             </div>
@@ -374,9 +391,9 @@ const Fretboard: React.FC<FretboardProps> = ({
   );
 };
 
-interface NoteCircleProps { 
-  note: FretboardNote; 
-  showInterval: boolean; 
+interface NoteCircleProps {
+  note: FretboardNote;
+  showInterval: boolean;
   isChordMode: boolean;
   isNut?: boolean;
   onSelect: (note: FretboardNote | null) => void;
@@ -384,17 +401,20 @@ interface NoteCircleProps {
   practiceStatus?: PracticeStatus;
   isOutOfRange?: boolean;
   onPracticeClick?: () => void;
+  micMode?: boolean;
 }
 
-const NoteCircle: React.FC<NoteCircleProps> = ({ 
-  note, showInterval, isChordMode, isNut, onSelect, 
-  practiceMode, practiceStatus, isOutOfRange, onPracticeClick 
+const NoteCircle: React.FC<NoteCircleProps> = ({
+  note, showInterval, isChordMode, isNut, onSelect,
+  practiceMode, practiceStatus, isOutOfRange, onPracticeClick, micMode
 }) => {
   const isRoot = note.isRoot;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (practiceMode) {
+      // 收音模式下禁用点击
+      if (micMode) return;
       if (!isOutOfRange) {
         onPracticeClick?.();
       }

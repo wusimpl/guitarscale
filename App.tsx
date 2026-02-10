@@ -4,8 +4,9 @@ import Fretboard from './components/Fretboard';
 import AITutor from './components/AITutor';
 import { ALL_NOTES, SCALE_PATTERNS, COMMON_CHORDS, getNoteAtFret, generateChordScaleQuestion, getScaleNotesFromIntervals } from './utils/musicTheory';
 import { NoteName, ScaleType, ChordShape, ChordCategory, PracticeResult, PracticeStatus, FretRange, ChordScaleQuestion } from './types';
-import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map, Zap, Shuffle, Timer, Check, X, ArrowRight, Volume2, VolumeX } from 'lucide-react';
+import { Settings, Music2, Grid, Layers, ChevronRight, Filter, Target, RotateCcw, Map, Zap, Shuffle, Timer, Check, X, ArrowRight, Volume2, VolumeX, Mic, MicOff } from 'lucide-react';
 import { playCorrectSound, playIncorrectSound, playSuccessSound, playChordSound, unlockAudio, isMuted, setMuted } from './utils/audioFeedback';
+import { PitchDetector, MicStatus, PitchResult } from './utils/pitchDetector';
 
 type ViewMode = 'scale' | 'chord' | 'practice' | 'chordScale';
 
@@ -58,6 +59,12 @@ const App: React.FC = () => {
   const [practiceFretRange, setPracticeFretRange] = useState<FretRange>(FRET_RANGE_PRESETS[0]);
   const [randomMode, setRandomMode] = useState<boolean>(false);
   const [includeSharps, setIncludeSharps] = useState<boolean>(false);
+
+  // 收音模式 State
+  const [micMode, setMicMode] = useState<boolean>(false);
+  const [micStatus, setMicStatus] = useState<MicStatus>('idle');
+  const [detectedNote, setDetectedNote] = useState<{ note: NoteName; octave: number } | null>(null);
+  const pitchDetectorRef = useRef<PitchDetector | null>(null);
 
   // 根据 includeSharps 过滤可选音符
   const practiceNotes = useMemo(() => {
@@ -114,7 +121,147 @@ const App: React.FC = () => {
     clearRandomSwitchTimeout();
   }, [clearRandomSwitchTimeout]);
 
-  // 计时器逻辑
+  // 收音模式：麦克风检测到音符时的回调处理
+  // 使用 ref 保存最新的 practiceResults，避免闭包陈旧问题
+  const practiceResultsRef = useRef<PracticeResult>(practiceResults);
+  useEffect(() => { practiceResultsRef.current = practiceResults; }, [practiceResults]);
+
+  const handleMicNoteDetected = useCallback((result: PitchResult) => {
+    const { note, octave } = result;
+    setDetectedNote({ note, octave });
+
+    // 首次检测到音符时启动计时器
+    setPracticeTimerRunning(prev => prev ? prev : true);
+
+    if (note !== practiceTargetNote) {
+      // 错误音符
+      playIncorrectSound();
+      setPracticeMistakes(prev => prev + 1);
+      setTimeout(() => setDetectedNote(null), 800);
+      return;
+    }
+
+    // 正确音符：在练习范围内找到匹配的位置，按 6→1 弦顺序
+    const openStringMidi = [64, 59, 55, 50, 45, 40];
+    const targetMidi = (octave + 1) * 12 + ALL_NOTES.indexOf(note);
+    const currentResults = practiceResultsRef.current;
+
+    // 第一轮：精确匹配 MIDI（音名+八度）
+    let matchedKey: string | null = null;
+    let matchedS = 0;
+    let matchedF = 0;
+    for (let s = 5; s >= 0 && !matchedKey; s--) {
+      for (let f = practiceFretRange.start; f <= practiceFretRange.end; f++) {
+        const midiAtPos = openStringMidi[s] + f;
+        if (midiAtPos === targetMidi) {
+          const key = `${s}-${f}`;
+          if (currentResults[key] !== 'correct') {
+            matchedKey = key;
+            matchedS = s;
+            matchedF = f;
+            break;
+          }
+        }
+      }
+    }
+
+    // 第二轮：退化为只匹配音名（检测八度可能有偏差）
+    if (!matchedKey) {
+      for (let s = 5; s >= 0 && !matchedKey; s--) {
+        for (let f = practiceFretRange.start; f <= practiceFretRange.end; f++) {
+          const { note: posNote } = getNoteAtFret(s, f);
+          if (posNote === note) {
+            const key = `${s}-${f}`;
+            if (currentResults[key] !== 'correct') {
+              matchedKey = key;
+              matchedS = s;
+              matchedF = f;
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (matchedKey) {
+      playCorrectSound(matchedS, matchedF);
+      setPracticeResults(prev => ({ ...prev, [matchedKey!]: 'correct' }));
+      setPracticeScore(prev => prev + 1);
+    }
+
+    setTimeout(() => setDetectedNote(null), 800);
+  }, [practiceTargetNote, practiceFretRange]);
+
+  // 收音模式：开关切换
+  // 关键：getUserMedia 必须在用户手势的同步调用链中发起，否则移动端不弹权限弹窗
+  const toggleMicMode = useCallback(() => {
+    if (micMode) {
+      // 关闭
+      pitchDetectorRef.current?.stop();
+      pitchDetectorRef.current = null;
+      setMicMode(false);
+      setMicStatus('idle');
+      setDetectedNote(null);
+    } else {
+      // 检查浏览器是否支持麦克风 API（需要 HTTPS）
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('当前浏览器不支持麦克风功能，请确保使用 HTTPS 访问');
+        setMicStatus('error');
+        setTimeout(() => setMicStatus('idle'), 3000);
+        return;
+      }
+      // 同步调用 getUserMedia，保持在用户手势上下文中
+      navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+        }
+      }).then(stream => {
+        const detector = new PitchDetector();
+        detector.onNoteDetected = handleMicNoteDetected;
+        detector.onStatusChange = setMicStatus;
+        pitchDetectorRef.current = detector;
+        setMicMode(true);
+        detector.startWithStream(stream);
+      }).catch(err => {
+        console.error('[收音模式] 麦克风权限被拒绝:', err);
+        alert('麦克风权限被拒绝，请在浏览器设置中允许麦克风访问');
+        setMicStatus('error');
+        setTimeout(() => setMicStatus('idle'), 3000);
+      });
+    }
+  }, [micMode, handleMicNoteDetected]);
+
+  // 收音模式下切换目标音符时重置检测器状态
+  useEffect(() => {
+    pitchDetectorRef.current?.resetTriggered();
+  }, [practiceTargetNote]);
+
+  // 回调变化时同步更新 detector 的引用
+  useEffect(() => {
+    if (pitchDetectorRef.current) {
+      pitchDetectorRef.current.onNoteDetected = handleMicNoteDetected;
+    }
+  }, [handleMicNoteDetected]);
+
+  // 离开练习模式时关闭收音
+  useEffect(() => {
+    if (viewMode !== 'practice' && micMode) {
+      pitchDetectorRef.current?.stop();
+      pitchDetectorRef.current = null;
+      setMicMode(false);
+      setMicStatus('idle');
+      setDetectedNote(null);
+    }
+  }, [viewMode]);
+
+  // 卸载时清理收音
+  useEffect(() => {
+    return () => {
+      pitchDetectorRef.current?.stop();
+    };
+  }, []);
   useEffect(() => {
     if (practiceTimerRunning) {
       if (timerRef.current) clearInterval(timerRef.current);
@@ -529,6 +676,18 @@ const App: React.FC = () => {
                       <Shuffle size={14} /> {randomMode ? '随机模式 开' : '随机模式 关'}
                     </button>
                     <button
+                      onClick={toggleMicMode}
+                      className={`h-11 rounded-xl border-2 font-bold flex items-center justify-center gap-2 text-xs transition-all
+                        ${micMode
+                          ? 'bg-emerald-600/20 border-emerald-400 text-emerald-400'
+                          : 'bg-neutral-900 border-neutral-800 text-neutral-500 hover:border-neutral-700'}
+                        ${micStatus === 'error' ? 'border-red-500 text-red-400' : ''}
+                      `}
+                    >
+                      {micMode ? <Mic size={14} className="animate-pulse" /> : <MicOff size={14} />}
+                      {micStatus === 'error' ? '麦克风不可用' : micMode ? '收音模式 开' : '收音模式 关'}
+                    </button>
+                    <button
                       onClick={resetPractice}
                       className="h-11 rounded-xl bg-neutral-800 border-2 border-neutral-700 text-neutral-400 font-bold flex items-center justify-center gap-2 hover:bg-red-900/20 hover:text-red-400 hover:border-red-900/30 transition-all text-xs"
                     >
@@ -565,6 +724,17 @@ const App: React.FC = () => {
                       <div className="flex items-center gap-2">
                         <Shuffle size={14} className="text-blue-400 animate-pulse" />
                         <span className="text-xs text-blue-400 font-bold">随机模式 · 完成后自动切换</span>
+                      </div>
+                    </>
+                  )}
+                  {micMode && (
+                    <>
+                      <div className="h-6 w-px bg-neutral-700" />
+                      <div className="flex items-center gap-2">
+                        <Mic size={14} className="text-emerald-400 animate-pulse" />
+                        <span className="text-xs text-emerald-400 font-bold">
+                          {detectedNote ? `检测到: ${detectedNote.note}${detectedNote.octave}` : '正在听...'}
+                        </span>
                       </div>
                     </>
                   )}
@@ -664,6 +834,8 @@ const App: React.FC = () => {
           practiceResults={practiceResults}
           practiceFretRange={practiceFretRange}
           onPracticeClick={handlePracticeClick}
+          micMode={micMode}
+          detectedNote={detectedNote}
           customScaleNotes={viewMode === 'chordScale' ? (csShowScale && csScaleNotes ? csScaleNotes.notes : []) : undefined}
         />
 

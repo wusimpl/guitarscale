@@ -21,7 +21,7 @@ export const setMuted = (muted: boolean) => {
  * 获取或创建 AudioContext
  * 注意：iOS 上必须在用户交互后才能正常播放
  */
-const getAudioCtx = () => {
+export const getAudioCtx = () => {
   if (!audioCtx) {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     audioCtx = new AudioContextClass();
